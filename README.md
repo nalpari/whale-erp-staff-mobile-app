@@ -43,6 +43,18 @@ flutter build ios --simulator
 
 iOS 빌드에는 Xcode와 CocoaPods가 필요합니다.
 
+### 빌드된 APK 위치
+
+`flutter build apk --debug`는 debug APK를, `flutter build apk --release`는 release APK를 만듭니다. 파일은 프로젝트 루트 기준으로 아래 경로에 생깁니다. 경로는 플랫폼과 상관없이 같고 구분자만 다릅니다.
+
+| 플랫폼 | debug APK | release APK |
+| --- | --- | --- |
+| macOS | `build/app/outputs/flutter-apk/app-debug.apk` | `build/app/outputs/flutter-apk/app-release.apk` |
+| Linux | `build/app/outputs/flutter-apk/app-debug.apk` | `build/app/outputs/flutter-apk/app-release.apk` |
+| Windows | `build\app\outputs\flutter-apk\app-debug.apk` | `build\app\outputs\flutter-apk\app-release.apk` |
+
+같은 폴더에 체크섬 파일(`.apk.sha1`)도 함께 생깁니다. `flutter run`도 debug APK를 같은 경로에 다시 빌드해서 덮어씁니다.
+
 검사와 테스트:
 
 ```bash
