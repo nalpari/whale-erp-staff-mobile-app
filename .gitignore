@@ -46,13 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
-graft/
 
-# graft (로컬 코드 그래프 도구) 파일
-.claude/helpers/graft-hooks.cjs
-.claude/helpers/graft-statusline.cjs
-.mcp.json
-.ignore
-
-# Claude Code 개인 설정 (graft 훅·상태줄이 여기 있다)
+# Claude Code 개인 설정
 .claude/settings.local.json
