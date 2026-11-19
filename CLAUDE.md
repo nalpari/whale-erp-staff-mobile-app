@@ -34,6 +34,14 @@ orca worktree create --repo path:/Users/kcs/workspace/WHALEERP/whale-erp-staff-m
 
 Pick a name that is not already a branch here (`git branch -a`). Ticket-scoped branches like `WHALEERP-659-contract-status-names` also exist in the other repos; use that form only when the work is tied to a Plane issue.
 
+## Plan tracking (every commit)
+
+`docs/webview-plan.md` is the original plan (copied from the user's Obsidian note, written when Capacitor was the chosen shell; the app is Flutter instead). `docs/progress.md` compares that plan against the code and lists what to do next.
+
+Any commit that touches `lib/`, `android/`, `ios/`, `assets/` or `pubspec.yaml` must include an updated `docs/progress.md`: re-check the changed items against the plan, update the status tables and the "다음에 할 일" order, and append one line to "분석 기록" (`date · HEAD at analysis time · summary`). When splitting work into several commits, update it in each app-code commit. `.githooks/pre-commit` enforces this; enable it per clone with `git config core.hooksPath .githooks`. Do not bypass it with `--no-verify` unless the user asks.
+
+If a plan decision changes (tech, icon, name, bundle ID), edit `docs/webview-plan.md` too and note the date, so the two documents do not drift.
+
 ## Architecture
 
 Everything lives in `lib/main.dart`.
