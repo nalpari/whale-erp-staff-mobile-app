@@ -32,3 +32,9 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# 서명 인증서·프로비저닝 프로파일은 커밋하지 않는다 (android/.gitignore의 keystore와 같은 취지)
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
