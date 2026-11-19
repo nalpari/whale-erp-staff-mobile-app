@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Flutter (Android + iOS only) WebView shell for the staff mobile web app `whale-erp-staff` (Next.js, sibling repo `../whale-erp-staff`). The app itself has almost no UI: it loads the web app full screen and adds native glue (back button, external links, pull-to-refresh, error/retry, splash). Bundle ID `kr.co.whaleerp.staff`, display name `WHALEERP`, portrait only.
+A Flutter (Android + iOS only) WebView shell for the staff mobile web app `whale-erp-new-staff` (Next.js, sibling repo `../whale-erp-new-staff`; older notes call it `whale-erp-staff`). The app itself has almost no UI: it loads the web app full screen and adds native glue (back button, external links, pull-to-refresh, error/retry, splash). Bundle ID `kr.co.whaleerp.staff`, display name `WHALEERP`, portrait only.
 
 ## Commands
 

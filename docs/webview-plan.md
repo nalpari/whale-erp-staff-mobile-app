@@ -18,6 +18,13 @@ tags: [whale-erp-staff, 웹뷰, 앱출시, ios, android]
 > - 그대로 유지: 아이콘 · 스플래시 시안(15), 앱 이름 「웨일ERP 직원」(3), 운영 URL `staff.whaleerp.co.kr`(6)
 > - 웹뷰 감지 User-Agent: **`WhaleStaffApp/<앱 버전>`** (예 `WhaleStaffApp/1.0`) 로 확정
 >
+> [!check] 2026-11-19 웹 · api 대조 (웹 `whale-erp-new-staff` `4717743`, api `whale-erp-api` `f40368ec`)
+> - 웹 저장소 이름을 바로잡음: `whale-erp-staff` → **`whale-erp-new-staff`**
+> - 딥링크 경로(7): api 가 밖으로 보내는 링크는 `/invite#token=` · `/password-reset/link#token=` · **`/affiliations`**. `/join` 은 빼고 `/affiliations` 를 넣음
+> - 파일 받기(10): 계약서는 `download` 링크가 아니라 S3 서명 주소(300초)로 302 리다이렉트. 급여 PDF 는 같은 호스트 attachment 라 네이티브가 받을 때 웹뷰 쿠키를 실어야 함
+> - 운영 도메인 `staff.whaleerp.co.kr` 은 아직 DNS 가 잡히지 않음. 앱 기본 URL 은 도메인이 열린 뒤 운영으로 바꾼다
+> - 실기기 확인 추가: 알림톡 버튼(카카오톡 인앱 브라우저)에서 App Links · Universal Links 동작, 서명 패드와 네이티브 당겨서 새로고침 충돌
+>
 > 앱 저장소의 `docs/progress.md` 가 이 문서와 코드를 비교해 남은 일을 관리한다.
 
 ---
@@ -28,7 +35,7 @@ tags: [whale-erp-staff, 웹뷰, 앱출시, ios, android]
 | -------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | 껍데기 기술   | **Flutter + `flutter_inappwebview` (2026-11-19 변경, 처음 결정은 Capacitor 2026-11-13)**                  | 아래 「껍데기 기술 결정」 참고                                                                                   |
 | 화면 싣는 방식 | **원격 URL 로드**                                                                                      | 서버 액션 · SSR · httpOnly 쿠키(`access_token` · `refresh_token` · `password_reset` 등)를 써서 정적 번들로 넣을 수 없다 |
-| 환경       | 개발 `staff-dev.whaleerp.co.kr` · 운영 `staff.whaleerp.co.kr` 두 개를 빌드 설정으로 나눔, 스테이징 없음 (2026-11-13 회의) | QA 앱은 개발 도메인을 본다                                                                                    |
+| 환경       | 개발 `staff-dev.whaleerp.co.kr` · 운영 `staff.whaleerp.co.kr` 두 개를 빌드 설정으로 나눔, 스테이징 없음 (2026-11-13 회의). 운영 도메인은 2026-11-19 현재 DNS 미등록 | QA 앱은 개발 도메인을 본다                                                                                    |
 
 ```mermaid
 flowchart LR
@@ -68,20 +75,22 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 
 | 저장소 | 할 일 |
 |---|---|
-| `whale-erp-staff` (웹) | viewport, 웹뷰 감지 · 브리지 모듈, 뒤로 가기 · 다운로드 · 위치 조작 감지 연결, `assetlinks.json` · `apple-app-site-association` |
+| `whale-erp-new-staff` (웹) | viewport, 웹뷰 감지 · 브리지 모듈, 뒤로 가기 · 다운로드 · 위치 조작 감지 연결, `assetlinks.json` · `apple-app-site-association` |
 | `whale-erp-staff-mobile-app` (Flutter 껍데기) | 위치 권한, 푸시, 딥링크 설정, 아이콘 · 스플래시, 스토어 빌드 · 서명 |
 
 원격 URL 방식이라 웹을 고쳐도 앱을 다시 빌드하지 않는다. 배포 주기(웹 머지 즉시 · 앱 스토어 심사)와 도구(Xcode · Android Studio · 서명 키)가 달라 저장소를 나눈다.
 
 ---
 
-## 1. 웹(이 저장소)에서 할 일
+## 1. 웹(`whale-erp-new-staff`)에서 할 일
 
 - [ ] **viewport** — `src/app/layout.tsx` 에 `export const viewport` 가 없다. `viewportFit: "cover"` + `themeColor` 를 넣어야 노치 밑까지 그리고 `env(safe-area-inset-*)` 가 동작한다
 - [ ] **웹뷰 감지 · 브리지** — UA 접미사 `WhaleStaffApp/<앱 버전>`(예 `WhaleStaffApp/1.0`, 2026-11-19 확정)으로 판별. 네이티브 호출은 한 모듈(`src/lib/native-bridge.ts`)에 모으고 `window.flutter_inappwebview.callHandler` 를 감싼다
 - [ ] **안드로이드 뒤로 가기** — 하드웨어 뒤로 → `history.back()`. 바텀시트(`<dialog>`)가 열려 있으면 시트부터 닫고, 첫 화면이면 앱 종료
-- [ ] **당겨서 새로고침 · 오버스크롤 끄기** — `overscroll-behavior: none`. 서명 패드(`contracts/_components/signature-pad.tsx`)에서 화면이 같이 끌리지 않는지 확인
-- [ ] **파일 받기** — 급여 PDF(`pay/_components/export-button.tsx` 의 `download` 링크) · 계약서 파일(`contracts/[contractId]/documents/[contractDocumentId]/route.ts`). 웹뷰는 `download` 를 기본 처리하지 않는다 → 네이티브가 저장 · 공유 시트
+- [ ] **당겨서 새로고침 · 오버스크롤 끄기** — `overscroll-behavior: none`. 서명 패드(`contracts/_components/signature-pad.tsx`)는 `touch-none` 이라 웹 스크롤은 막혀 있다. 앱이 켠 네이티브 당겨서 새로고침과 부딪히지 않는지 실기기로 확인 (2026-11-19)
+- [ ] **파일 받기** — 두 경로가 방식이 다르다 (2026-11-19 확인) → 네이티브가 저장 · 공유 시트
+  - 급여 PDF: `pay/_components/export-button.tsx` 의 `download` 링크 → `pay/[payslipId]/pdf/route.ts` 가 같은 호스트에서 `application/pdf` attachment 로 내려준다. 앱이 `onDownloadStartRequest` 로 받되, 로그인이 httpOnly 쿠키라 **웹뷰 쿠키를 실어** 받아야 한다. 실패하면 이 라우트는 평문 글자를 돌려줘 앱 화면을 덮을 수 있다 → 계약서처럼 상세로 돌려보내게 바꾸는 것을 검토
+  - 계약서 파일: `download` 링크가 아니다. `contracts/[contractId]/documents/[contractDocumentId]/route.ts` 가 S3 서명 주소(300초, attachment)로 **302 리다이렉트**한다. 다른 호스트라 지금 앱은 외부 브라우저로 내보낸다 → 앱에서 S3 주소 이동을 다운로드로 받는다
 - [ ] **위치 조작 감지** — `check-in-screen.tsx` 가 `mocked: false` 로 고정이다. 웹에선 알 수 없어 네이티브가 넘겨야 한다(Android `Location.isMock()`, iOS 15+ `sourceInformation.isSimulatedBySoftware`). 그래야 `MOCK_LOCATION` 확인 필요 사유가 실제로 쌓인다
 - [ ] **기기 식별자** — `getDeviceId()`(`src/lib/session.ts`)는 쿠키에 굽는 UUID 라 앱을 지우면 바뀐다. 네이티브 ID 를 받아 쓰는 쪽이 낫다
 - [x] **오프라인 · 오류 화면** — 원격 URL 이 안 열릴 때 네이티브 쪽 다시 시도 화면 (앱에서 처리, 2026-11-19)
@@ -89,8 +98,8 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 ## 2. 네이티브 껍데기에서 할 일
 
 - [ ] **위치 권한** — iOS `NSLocationWhenInUseUsageDescription`, Android 런타임 권한 + `onGeolocationPermissionsShowPrompt`. 웹 · OS 권한이 두 번 뜨지 않게
-- [ ] **푸시(FCM · APNs)** — 앱 푸시 템플릿 5종(`PUSH_CONTRACT_SENT` 등)과 수신 설정 묶음은 정의돼 있지만 받는 쪽이 없다. 토큰 발급 → api 등록 → 알림 누르면 해당 화면. **토큰 등록 API 는 api 팀과 정해야 한다**
-- [ ] **딥링크(App Links · Universal Links)** — 알림톡 가입 초대(`TALK_STAFF_INVITATION`), 비밀번호 재설정(`/password-reset/link#token=…`). 도메인에 `assetlinks.json` · `apple-app-site-association` 을 올리고, `#` 뒤 토큰이 앱으로 넘어오는지 확인
+- [ ] **푸시(FCM · APNs)** — 앱 푸시 템플릿 5종(`PUSH_CONTRACT_SENT` 등)과 수신 설정 묶음은 정의돼 있지만 받는 쪽이 없다. 토큰 발급 → api 등록 → 알림 누르면 해당 화면. **토큰 등록 API 는 api 팀과 정해야 한다** (api 이슈 #261 · #321, 2026-11-19 현재 발송 대기 행만 쌓는다)
+- [ ] **딥링크(App Links · Universal Links)** — api(`src/auth/staff-app-url.ts`)가 `STAFF_APP_URL` 의 origin 으로 만드는 링크 세 가지: 알림톡 가입 초대(`TALK_STAFF_INVITATION`, `/invite#token=…`), 비밀번호 재설정(`/password-reset/link#token=…`), 소속 추가 확인 요청(`/affiliations`, 토큰 없음). 도메인에 `assetlinks.json` · `apple-app-site-association` 을 올리고, `#` 뒤 토큰이 앱으로 넘어오는지 확인. 알림톡 버튼은 카카오톡 인앱 브라우저로 열릴 수 있어 앱이 뜨는지 실기기로 확인 (2026-11-19)
 - [ ] **쿠키 유지** — 자동 로그인 켜면 마지막 사용 후 30일, 끄면 7일(`src/lib/session-cookies.ts`). Android `CookieManager.flush()`, WKWebView 쿠키 저장소 유지
 - [x] **외부 링크** — 같은 도메인은 웹뷰 안, 그 밖은 외부 브라우저 (2026-11-19)
 - [ ] **키보드** — Android `adjustResize`. 하단 `sticky` Dock 이 키보드에 가리지 않는지
@@ -160,10 +169,10 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 | # | 정할 것 | 추천 | 결정 |
 |---|---|---|---|
 | 6 | 환경별 URL | 개발 · 스테이징 · 운영 도메인 3개를 빌드 설정으로 나눈다(실제 도메인 확인 필요) | **결정** — 개발 `staff-dev.whaleerp.co.kr` · 운영 `staff.whaleerp.co.kr`, **스테이징 없음** (2026-11-13 회의) |
-| 7 | 딥링크 경로 | `/invite` · `/join` · `/password-reset/link` 를 앱에서 연다. 앱이 없으면 웹으로. 도메인에 `assetlinks.json` · `apple-app-site-association` | **결정** — 추천대로 (2026-11-13 회의) |
+| 7 | 딥링크 경로 | `/invite` · `/affiliations` · `/password-reset/link` 를 앱에서 연다(2026-11-19 수정: 처음엔 `/join` 이었으나 밖에서 들어오는 링크가 아니라 빼고, api 가 보내는 `/affiliations` 를 넣음). 앱이 없으면 웹으로. 도메인에 `assetlinks.json` · `apple-app-site-association` | **결정** — 추천대로 (2026-11-13 회의) |
 | 8 | 위치 조작 감지 | 위치는 웹 geolocation 그대로, 조작 감지 결과(`isMock`)만 네이티브가 넘긴다. 커스텀 플러그인 1개, `check-in-screen.tsx` 의 `mocked` 를 브리지 값으로 | **결정** — 추천대로 (2026-11-13 회의). Flutter 라 커스텀 플러그인 대신 JS 핸들러 1개 (2026-11-19) |
 | 9 | 기기 식별자 | 앱 안에서는 네이티브 ID 를 넘겨 `getDeviceId()` 대신 쓴다. 웹은 지금처럼 쿠키 UUID | **결정** — 추천대로 (2026-11-13 회의) |
-| 10 | 파일 받기 | 공유 시트로 연다(저장 · 카톡 전송을 사용자가 고름). 급여 PDF · 계약서 링크를 앱 안에선 브리지로 | **결정** — 추천대로 (2026-11-13 회의) |
+| 10 | 파일 받기 | 공유 시트로 연다(저장 · 카톡 전송을 사용자가 고름). 급여 PDF · 계약서 링크를 앱 안에선 브리지로. 계약서는 S3 서명 주소로 리다이렉트되고 급여 PDF 는 쿠키가 필요하다(위 1절, 2026-11-19) | **결정** — 추천대로 (2026-11-13 회의) |
 | 11 | 푸시 | FCM 프로젝트는 회사 Google 계정으로. 토큰 등록 API 를 api 팀과 협의 · 일정 | **결정** — 추천대로 (토큰 등록 API 는 api 팀 협의) (2026-11-13 회의) |
 | 12 | 강제 업데이트 | api 에 최소 앱 버전 값을 두고 앱 시작 때 확인(api 팀 협의) | **결정** — 추천대로 (최소 앱 버전 값은 api 팀 협의) (2026-11-13 회의) |
 

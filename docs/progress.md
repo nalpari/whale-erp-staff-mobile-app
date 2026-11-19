@@ -15,7 +15,7 @@
 | 기기 범위 (5번) | 계획대로 휴대전화 전용 · 세로 고정 | iOS `TARGETED_DEVICE_FAMILY = "1,2"` (iPad 포함) | ❌ `project.pbxproj`에서 `"1"`로 바꾸고 `UISupportedInterfaceOrientations~ipad`를 지운다 |
 | 아이콘 · 스플래시 (15번) | 계획대로 남보라 `#4C4DDC` 바탕에 흰 고래 (`~/Downloads/icons/`) | `#0a0a0a` 바탕에 노란 고래 `#f7fe57` | ❌ 원본을 `assets/`로 옮기고 `pubspec.yaml`의 두 패키지 설정, `main.dart`의 `splashColor` · `splashLogo` · `splashWhale`, CLAUDE.md · README의 이미지 설명을 같이 바꾼다 |
 | 앱 이름 (3번) | 계획대로 「웨일ERP 직원」 | `WHALEERP` (Android `android:label`, iOS `CFBundleDisplayName`, `MaterialApp.title`) | ❌ 세 곳을 바꾼다 |
-| 운영 URL (6번) | 계획대로 `staff.whaleerp.co.kr` | 기본값 dev, 코드 TODO는 "prod 주소 미정" | ❌ TODO를 운영 주소로 고친다. 기본값을 운영으로 바꾸는 건 도메인이 열린 뒤 |
+| 운영 URL (6번) | 계획대로 `staff.whaleerp.co.kr` | 기본값 dev, 코드 TODO는 "prod 주소 미정" | ❌ TODO를 운영 주소로 고친다. 기본값을 운영으로 바꾸는 건 도메인이 열린 뒤다. 2026-11-19 현재 `staff.whaleerp.co.kr`은 DNS가 잡히지 않는다 |
 | 웹뷰 감지 UA | 계획대로 `WhaleStaffApp/<앱 버전>` (예 `WhaleStaffApp/1.0`) | `WhaleERPStaffApp` (버전 없음) | ❌ 앱 버전을 붙여 바꾼다(버전 읽기에 `package_info_plus` 등). README · CLAUDE.md도 같이. 웹 감지 코드는 아직 없어서 깨질 곳은 없다 |
 | 번들 ID (2번) | **보류** — 3단계 딥링크 전까지 확정 | `kr.co.whaleerp.staff` (로컬에서만 사용) | ⏸ 외부(Apple · Firebase · Play) 등록을 하지 않는 한 그대로 둔다 |
 
@@ -33,23 +33,23 @@
 | 키보드 | 🟡 | `adjustResize`는 있다. 하단 sticky Dock이 가리는지 실기기 확인이 남았다 |
 | **위치 권한** | ❌ | 매니페스트에 위치 권한이 없고 iOS `NSLocationWhenInUseUsageDescription`도 없다. Android 웹뷰 `onGeolocationPermissionsShowPrompt`도 처리하지 않는다. **지금 앱에서는 출퇴근 위치를 못 잡는다** |
 | 위치 조작 감지 (`isMock`) | ❌ | 네이티브 코드와 JS 핸들러가 둘 다 없다 |
-| 파일 받기 (급여 PDF · 계약서) | ❌ | `onDownloadStartRequest` 처리가 없다. 공유 시트 연결이 필요하다 |
+| 파일 받기 (급여 PDF · 계약서) | ❌ | 두 경로를 따로 처리해야 한다. 급여 PDF는 같은 호스트 attachment라 `onDownloadStartRequest`로 받되 웹뷰 쿠키를 실어야 한다. 계약서는 S3 서명 주소로 302 리다이렉트돼서, **지금은 `isInApp`이 외부 브라우저로 내보낸다**. 둘 다 받은 뒤 공유 시트 |
 | 쿠키 유지 (자동 로그인 30일 / 7일) | 🟡 | 기본 동작에 맡겨 둔 상태. 앱을 백그라운드로 보낼 때 `CookieManager.flush()`를 부르지 않는다. 앱을 강제 종료한 뒤 로그인이 남는지 확인하지 않았다 |
 | 기기 식별자 | ❌ | 네이티브 ID를 넘기는 핸들러가 없다 |
-| 딥링크 (초대 · 비밀번호 재설정) | ❌ | intent-filter · Associated Domains가 없다. 번들 ID를 확정해야 시작할 수 있다 |
+| 딥링크 (`/invite` · `/password-reset/link` · `/affiliations`) | ❌ | intent-filter · Associated Domains가 없다. 알림톡 버튼(카카오톡 인앱 브라우저)에서 앱이 뜨는지도 실기기로 봐야 한다. 번들 ID를 확정해야 시작할 수 있다 |
 | 푸시 (FCM · APNs) | ❌ | api 팀과 토큰 등록 API 협의가 먼저다 |
 | 강제 업데이트 | ❌ | api 팀과 최소 앱 버전 값 협의가 먼저다 |
 | 당겨서 새로고침 | ⚠️ | 네이티브 `PullToRefreshController`를 켰다. 계획은 반대로 웹에서 오버스크롤을 끄는 것이었다. 서명 패드(`signature-pad.tsx`)에서 그리다가 새로고침이 되지 않는지 확인하고, 필요하면 해당 화면에서 끈다 |
 | 릴리즈 서명 · iOS 프로비저닝 | ❌ | Android release가 debug 키로 서명된다. 이 맥에서는 iOS를 빌드해 본 적이 없다 |
 
-### 웹 (`whale-erp-new-staff`, 로컬 `main` `ce1b1ee` 기준)
+### 웹 (`whale-erp-new-staff`, `origin/main` `4717743` 기준)
 
 | 항목 | 상태 | 근거 |
 | --- | --- | --- |
 | viewport (`viewportFit`, `themeColor`) | ❌ | `src/app/layout.tsx`에 `export const viewport`가 없다. 앱은 Flutter `SafeArea`가 노치를 피하므로 급하지는 않다 |
 | 웹뷰 감지 · 브리지 모듈 | ❌ | `WhaleERPStaffApp`를 감지하는 코드도, `native-bridge` 모듈도 없다 |
 | 위치 조작 감지 연결 | ❌ | `check-in-screen.tsx`가 아직 `mocked: false`로 고정돼 있다 |
-| 다운로드 · 뒤로 가기 브리지 | ❌ | 없음 |
+| 다운로드 · 뒤로 가기 브리지 | ❌ | 없음. 급여 PDF 라우트(`pay/[payslipId]/pdf/route.ts`)는 실패하면 평문 글자를 돌려줘 앱 화면을 덮을 수 있다. 계약서 라우트처럼 상세로 돌려보내게 바꾸는 것을 검토 |
 | `assetlinks.json` · `apple-app-site-association` | ❌ | `public/`에 없다. 번들 ID를 확정한 뒤에 만든다 |
 
 ### 스토어 심사 · 정책
@@ -70,7 +70,7 @@
 3. **위치 권한 (2단계, 최우선)**: Android 권한 + `onGeolocationPermissionsShowPrompt`, iOS 사유 문구. 출퇴근이 핵심 기능이라 이것 없이는 테스트를 못 한다
 4. **JS 브리지 골격**: 앱에 `addJavaScriptHandler`, 웹에 `native-bridge.ts`. 웹은 UA `WhaleStaffApp/`으로 앱 안인지 판별한다
 5. **위치 조작 감지**: 핸들러에서 Android `isMock()`(API 31+, 24~30은 `isFromMockProvider()`) / iOS `isSimulatedBySoftware`를 넘기고, 웹 `check-in-screen.tsx`의 `mocked`를 그 값으로 바꾼다
-6. **파일 받기**: `onDownloadStartRequest` → 저장 후 공유 시트
+6. **파일 받기**: 급여 PDF는 `onDownloadStartRequest`에서 웹뷰 쿠키를 실어 받고, 계약서는 S3 호스트로 가는 이동을 가로채 받는다. 둘 다 저장 후 공유 시트
 7. 3단계 이후(딥링크 · 푸시 · 강제 업데이트)는 번들 ID 확정과 api 팀 협의가 먼저다. 협의 일정을 잡아 둔다
 
 ## 분석 기록
@@ -79,3 +79,4 @@
 
 - 2026-11-19 · `79140e9` · 첫 분석. 1단계(껍데기 · 외부 링크 · 뒤로 가기 · 오류 화면 · 스플래시) 완료. 계획과 다른 점 8건(1절), 2단계 이후와 웹 연동은 전부 시작 전
 - 2026-11-19 · `0c618ab` · 결정 반영(코드 변경 없음). 기술 Flutter, Android API 24, 번들 ID 보류로 계획서 수정. 아이콘 · 앱 이름 · iOS 휴대전화 전용 · 운영 URL · UA는 계획대로 가기로 해서 코드 반영 5건이 남음
+- 2026-11-19 · `cd68675` · 웹(`whale-erp-new-staff` `4717743`) · api(`f40368ec`) 대조(코드 변경 없음). 웹 저장소 이름, 딥링크 경로(`/join` → `/affiliations`), 파일 받기 방식(계약서는 S3 리다이렉트, 급여 PDF는 쿠키 필요)을 바로잡고, 운영 도메인 DNS 미등록과 실기기 확인 2건(알림톡 딥링크, 서명 패드 새로고침)을 추가
