@@ -24,6 +24,16 @@ dart run flutter_launcher_icons                            # after changing the 
 
 Local Android tooling on this machine: SDK at `/opt/homebrew/share/android-commandlinetools` (adb/emulator are not on PATH; use `platform-tools/adb`, `emulator/emulator`). AVD `whale_pixel` (Pixel 7, Android 16) lives in `~/.android/avd`. `avdmanager` from the Homebrew `cmdline-tools/latest` (v22) cannot create AVDs for the API 36 image; use `cmdline-tools/latest-2` (v23). `flutter run` here has failed to attach DDS after launch; the installed app still runs.
 
+## Worktrees and branches
+
+Create worktrees with Orca, not Claude Code's `EnterWorktree` (that one lands in `.claude/worktrees/`, which Orca does not register, so it shows up as a folder inside `main`). Follow the same naming as the other WHALEERP repos (`whale-erp-api`, `whale-erp-new-front`, `whale-erp-new-staff`): one lowercase English Pokémon name, with no `chang-su98/` prefix, used for both the worktree and the branch (`togepi`, `gengar`). Orca's default prefixes the git username and picks a random word (for example `chang-su98/pacu`), so always pass `--branch`:
+
+```bash
+orca worktree create --repo path:/Users/kcs/workspace/WHALEERP/whale-erp-staff-mobile-app --name <pokemon> --branch <pokemon> --no-parent --json
+```
+
+Pick a name that is not already a branch here (`git branch -a`). Ticket-scoped branches like `WHALEERP-659-contract-status-names` also exist in the other repos; use that form only when the work is tied to a Plane issue.
+
 ## Architecture
 
 Everything lives in `lib/main.dart`.
