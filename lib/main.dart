@@ -29,10 +29,16 @@ bool isInApp(Uri uri, Uri base) {
       uri.host == base.host;
 }
 
-/// 웹이 위치를 물어도 되는 출처인지. 웹 주소와 같은 호스트의 https 만 허락한다.
+/// 웹이 위치를 물어도 되는 출처인지. 웹 주소와 같은 출처(https · 호스트 · 포트)만 허락한다.
+/// 같은 호스트라도 포트가 다르면 다른 서비스일 수 있어 거부한다. [Uri.port] 는 생략된 포트를 443 으로 본다.
 bool isTrustedOrigin(String origin, Uri base) {
   final uri = Uri.tryParse(origin);
-  return uri != null && uri.scheme == 'https' && uri.host == base.host;
+  return uri != null &&
+      uri.scheme == 'https' &&
+      base.scheme == 'https' &&
+      uri.host.isNotEmpty &&
+      uri.host == base.host &&
+      uri.port == base.port;
 }
 
 /// 위치를 쓸 수 있는 상태. 웹의 위치 요청을 허락할지와 사용자에게 띄울 안내를 정한다.
@@ -121,17 +127,21 @@ Future<LocationAccess> ensureLocationAccess({
       ? LocationAccess.precise
       : LocationAccess.approximate;
 
-  var justAsked = false;
-  final permission = await guarded<LocationPermission?>(
-    () async {
-      final current = await check();
-      if (current != LocationPermission.denied) return current;
-      justAsked = true;
-      return request();
-    },
+  // 확인과 요청에 시간 제한을 따로 건다. 하나로 묶으면 확인이 시간을 넘긴 뒤 늦게 denied 로 끝날 때
+  // (timeout 은 원래 작업을 취소하지 않는다) 웹에 이미 거부를 돌려준 뒤에 OS 권한 창이 뜬다.
+  final current = await guarded<LocationPermission?>(
+    check,
     null,
     '위치 권한을 확인하지 못해 웹의 위치 요청을 거부함',
   );
+  final justAsked = current == LocationPermission.denied;
+  final permission = justAsked
+      ? await guarded<LocationPermission?>(
+          request,
+          null,
+          '위치 권한을 요청하지 못해 웹의 위치 요청을 거부함',
+        )
+      : current;
   final notGranted = blocked(permission);
   if (notGranted != null) return notGranted;
 
@@ -295,12 +305,11 @@ class _WebScreenState extends State<WebScreen> {
     final result = await _locationGate.request();
     if (result.started && mounted) {
       final guide = locationGuide(result.access);
-      if (guide != null) {
-        if (_loaded) {
-          _showLocationGuide(guide);
-        } else {
-          _pendingGuide = guide;
-        }
+      if (_loaded) {
+        if (guide != null) _showLocationGuide(guide);
+      } else {
+        // 첫 페이지 전에는 최신 결과로 덮는다. 앞 확인이 실패했어도 다시 확인해 괜찮아졌으면(null) 지난 안내를 버린다.
+        _pendingGuide = guide;
       }
     }
     return result.access.allowsWeb;

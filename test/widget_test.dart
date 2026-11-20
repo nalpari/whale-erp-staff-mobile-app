@@ -61,7 +61,22 @@ void main() {
     });
   });
 
-  test('위치는 웹 주소와 같은 호스트의 https 출처만 허락한다', () {
+  test('위치는 웹 주소와 같은 출처(https · 호스트 · 포트)만 허락한다', () {
+    expect(
+      isTrustedOrigin('https://staff-dev.whaleerp.co.kr:443', base),
+      isTrue,
+    );
+    expect(
+      isTrustedOrigin('https://staff-dev.whaleerp.co.kr:8443', base),
+      isFalse,
+    );
+    expect(
+      isTrustedOrigin(
+        'https://staff-dev.whaleerp.co.kr',
+        Uri.parse('http://staff-dev.whaleerp.co.kr'),
+      ),
+      isFalse,
+    );
     expect(isTrustedOrigin('https://staff-dev.whaleerp.co.kr', base), isTrue);
     expect(isTrustedOrigin('https://staff-dev.whaleerp.co.kr/', base), isTrue);
     expect(isTrustedOrigin('http://staff-dev.whaleerp.co.kr', base), isFalse);
@@ -284,6 +299,25 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(access, LocationAccess.failed);
       expect(tester.takeException(), isA<TimeoutException>());
+    });
+
+    testWidgets('권한 확인이 시간을 넘긴 뒤 늦게 denied 로 끝나도 권한 창을 띄우지 않는다', (
+      tester,
+    ) async {
+      final slowCheck = Completer<LocationPermission>();
+      LocationAccess? access;
+      ensureLocationAccess(
+        check: () => slowCheck.future,
+        request: counted('request', LocationPermission.whileInUse),
+        accuracy: counted('accuracy', precise),
+        serviceEnabled: counted('service', true),
+      ).then((v) => access = v);
+      await tester.pump(const Duration(seconds: 60));
+      expect(access, LocationAccess.failed);
+      expect(tester.takeException(), isA<TimeoutException>());
+      slowCheck.complete(LocationPermission.denied);
+      await tester.pump();
+      expect(called('request'), 0);
     });
 
     testWidgets('권한이 있는데 위치 서비스 상태를 못 읽으면 켜진 것으로 보고 허락한다', (tester) async {
