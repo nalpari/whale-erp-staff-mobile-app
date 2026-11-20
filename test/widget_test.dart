@@ -88,6 +88,63 @@ void main() {
     expect(isTrustedOrigin('', base), isFalse);
   });
 
+  group('SingleFlight', () {
+    test('돌고 있는 동안에는 다시 부르지 않고 같은 결과를 기다린다', () async {
+      final flight = SingleFlight<int>();
+      final gate = Completer<int>();
+      var calls = 0;
+      Future<int> call() {
+        calls++;
+        return gate.future;
+      }
+
+      final a = flight.run(call);
+      final b = flight.run(call);
+      expect(calls, 1);
+      gate.complete(7);
+      expect(await a, 7);
+      expect(await b, 7);
+      await flight.run(() async => calls++);
+      expect(calls, 2);
+    });
+
+    test('실패해도 다음 호출은 새로 부른다', () async {
+      final flight = SingleFlight<int>();
+      await expectLater(
+        flight.run(() async => throw Exception('실패')),
+        throwsException,
+      );
+      expect(await flight.run(() async => 3), 3);
+    });
+
+    testWidgets('시간 제한이 지나도 권한 창이 닫히기 전에는 다시 요청하지 않는다', (tester) async {
+      final flight = SingleFlight<LocationPermission>();
+      final dialog = Completer<LocationPermission>();
+      var requests = 0;
+      Future<LocationAccess> ask() => ensureLocationAccess(
+        check: () async => LocationPermission.denied,
+        request: () => flight.run(() {
+          requests++;
+          return dialog.future;
+        }),
+        accuracy: () async => LocationAccuracyStatus.precise,
+        serviceEnabled: () async => true,
+      );
+      LocationAccess? first;
+      ask().then((v) => first = v);
+      await tester.pump(const Duration(seconds: 60));
+      expect(first, LocationAccess.failed);
+      expect(tester.takeException(), isA<TimeoutException>());
+      LocationAccess? second;
+      ask().then((v) => second = v);
+      await tester.pump();
+      expect(requests, 1);
+      dialog.complete(LocationPermission.whileInUse);
+      await tester.pump();
+      expect(second, LocationAccess.precise);
+    });
+  });
+
   group('ensureLocationAccess', () {
     // 호출 횟수를 센다. 단계 안에서 fail() 을 쓰면 오류 처리(guarded)가 삼켜 버리므로 쓰지 않는다.
     late Map<String, int> calls;

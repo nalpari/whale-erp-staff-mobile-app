@@ -163,6 +163,16 @@ Future<LocationAccess> ensureLocationAccess({
   return blocked(again) ?? await byAccuracy();
 }
 
+/// 같은 비동기 호출을 한 번에 하나만 돌린다. 돌고 있으면 새로 부르지 않고 그 결과를 같이 기다린다.
+/// 위치 권한 창에 쓴다. 시간 제한([ensureLocationAccess] 의 timeout)은 웹에 돌려줄 답만 끊고 OS 권한 창은
+/// 그대로 떠 있으므로, 그동안 온 요청이 requestPermission 을 다시 부르면 결과 콜백이 엉킨다.
+class SingleFlight<T> {
+  Future<T>? _running;
+
+  Future<T> run(Future<T> Function() call) =>
+      _running ??= call().whenComplete(() => _running = null);
+}
+
 /// 웹뷰 위치 요청을 한 줄로 세운다. 권한 창이 떠 있는 동안 온 요청은 같은 결과를 기다린다
 /// (겹쳐 부르면 geolocator 가 앞 요청의 결과를 잃는다). 「대략적 위치」면 정확한 위치로 바꿀지
 /// 앱을 켠 동안 한 번만 다시 묻는다. 페이지마다 물으면 귀찮다.
@@ -292,12 +302,17 @@ class _WebScreenState extends State<WebScreen> {
   bool _failed = false;
   bool _loaded = false;
   bool _splashGone = false;
-  final _locationGate = LocationGate(
+  // OS 권한 창은 시간 제한이 지나도 떠 있을 수 있어, 창이 닫히기 전에는 다시 띄우지 않는다.
+  final _permissionRequest = SingleFlight<LocationPermission>();
+  late final _locationGate = LocationGate(
     ({required askPrecise, onAskPrecise}) => ensureLocationAccess(
       askPrecise: askPrecise,
       onAskPrecise: onAskPrecise,
+      request: () => _permissionRequest.run(Geolocator.requestPermission),
     ),
   );
+  // 지금 떠 있는 위치 안내. 닫히면 null.
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _guideBar;
   // 스플래시가 떠 있는 동안 나온 안내. 첫 페이지가 그려지면 띄운다.
   LocationGuide? _pendingGuide;
 
@@ -306,7 +321,12 @@ class _WebScreenState extends State<WebScreen> {
     if (result.started && mounted) {
       final guide = locationGuide(result.access);
       if (_loaded) {
-        if (guide != null) _showLocationGuide(guide);
+        if (guide != null) {
+          _showLocationGuide(guide);
+        } else if (_guideBar != null) {
+          // 다시 확인해 괜찮아졌으면 떠 있는 위치 안내만 닫는다(화면 읽기 사용 시에는 저절로 안 닫힌다).
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        }
       } else {
         // 첫 페이지 전에는 최신 결과로 덮는다. 앞 확인이 실패했어도 다시 확인해 괜찮아졌으면(null) 지난 안내를 버린다.
         _pendingGuide = guide;
@@ -318,37 +338,39 @@ class _WebScreenState extends State<WebScreen> {
   void _showLocationGuide(LocationGuide guide) {
     final messenger = ScaffoldMessenger.of(context);
     final action = guide.action;
-    messenger
-      ..removeCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(guide.message),
-          duration: const Duration(seconds: 6),
-          // action 이 있으면 SnackBar 는 기본으로 사라지지 않고 하단 Dock 을 가린다. 시간이 지나면 닫되,
-          // 화면 읽기 프로그램을 쓰면 버튼까지 갈 시간이 필요하니 남겨 둔다.
-          persist: MediaQuery.accessibleNavigationOf(context),
-          showCloseIcon: true,
-          action: action == null
-              ? null
-              : SnackBarAction(
-                  label: action,
-                  onPressed: () async {
-                    final opened = await (guide.appSettings
-                        ? Geolocator.openAppSettings()
-                        : Geolocator.openLocationSettings());
-                    if (!opened && mounted) {
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text(guide.fallback),
-                          duration: const Duration(seconds: 8),
-                          showCloseIcon: true,
-                        ),
-                      );
-                    }
-                  },
-                ),
-        ),
-      );
+    messenger.removeCurrentSnackBar();
+    final bar = _guideBar = messenger.showSnackBar(
+      SnackBar(
+        content: Text(guide.message),
+        duration: const Duration(seconds: 6),
+        // action 이 있으면 SnackBar 는 기본으로 사라지지 않고 하단 Dock 을 가린다. 시간이 지나면 닫되,
+        // 화면 읽기 프로그램을 쓰면 버튼까지 갈 시간이 필요하니 남겨 둔다.
+        persist: MediaQuery.accessibleNavigationOf(context),
+        showCloseIcon: true,
+        action: action == null
+            ? null
+            : SnackBarAction(
+                label: action,
+                onPressed: () async {
+                  final opened = await (guide.appSettings
+                      ? Geolocator.openAppSettings()
+                      : Geolocator.openLocationSettings());
+                  if (!opened && mounted) {
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(guide.fallback),
+                        duration: const Duration(seconds: 8),
+                        showCloseIcon: true,
+                      ),
+                    );
+                  }
+                },
+              ),
+      ),
+    );
+    bar.closed.whenComplete(() {
+      if (_guideBar == bar) _guideBar = null;
+    });
   }
 
   void _markLoaded() {
