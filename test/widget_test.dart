@@ -17,4 +17,8 @@ void main() {
     expect(isInApp(Uri.parse('tel:01012345678'), base), isFalse);
     expect(isInApp(Uri.parse('mailto:a@b.com'), base), isFalse);
   });
+
+  test('User-Agent 접미사는 WhaleStaffApp/<앱 버전>', () {
+    expect(appUserAgent('1.0.0'), 'WhaleStaffApp/1.0.0');
+  });
 }

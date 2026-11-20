@@ -5,7 +5,7 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 앱 이름 | WHALEERP |
+| 앱 이름 | 웨일ERP 직원 (iPhone 전용, 세로 고정) |
 | 번들 ID / applicationId | `kr.co.whaleerp.staff` |
 | 플랫폼 | Android, iOS (iOS 15.4 이상, Android 최소 버전은 Flutter 기본값) |
 | 화면 방향 | 세로 고정 |
@@ -20,7 +20,7 @@
 - **Android 뒤로가기**: 웹 히스토리가 있으면 뒤로 가고, 없으면 앱을 종료합니다.
 - **당겨서 새로고침**: 웹 화면을 아래로 당기면 다시 불러옵니다.
 - **오류 화면**: 페이지를 불러오지 못하면 "연결할 수 없습니다" 화면과 "다시 시도" 버튼을 보여줍니다.
-- **User-Agent**: 기본 User-Agent 끝에 `WhaleERPStaffApp`을 붙여서, 웹에서 앱 안에서 열렸는지 알 수 있습니다.
+- **User-Agent**: 기본 User-Agent 끝에 `WhaleStaffApp/<앱 버전>`(예: `WhaleStaffApp/1.0.0`)을 붙여서, 웹에서 앱 안에서 열렸는지 알 수 있습니다.
 - **스플래시**: 정지된 OS 스플래시(남보라 `#4C4DDC` 바탕, 흰 고래와 별)가 끝나면, 같은 화면을 앱이 이어서 띄웁니다. 로딩 표시 없이 고래만 보이다가, 첫 페이지가 그려지면 페이드 아웃합니다.
 
 ## 실행과 빌드
@@ -92,6 +92,6 @@ dart run flutter_launcher_icons
 
 ## 알아둘 점
 
-- **prod 주소**: 아직 정해지지 않았습니다. 정해지면 `lib/main.dart`의 `WEB_URL` 기본값을 prod로 바꿔야 합니다(코드에 TODO가 있습니다).
+- **운영 주소**: `https://staff.whaleerp.co.kr`입니다. 도메인이 열리면 `lib/main.dart`의 `WEB_URL` 기본값을 운영으로 바꿔야 합니다(코드에 TODO가 있습니다).
 - **릴리즈 서명**: Android release 빌드는 아직 debug 키로 서명됩니다(`android/app/build.gradle.kts`).
 - **웹뷰 패키지 버전**: `flutter_inappwebview`는 `6.2.0-beta.3`으로 고정돼 있습니다. 6.1.5 안정판은 이 프로젝트가 쓰는 Android Gradle Plugin 9에서 빌드되지 않기 때문입니다. 6.2.0 안정판이 나오면 바꿀 예정입니다.

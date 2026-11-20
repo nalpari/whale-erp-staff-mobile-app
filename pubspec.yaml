@@ -38,6 +38,7 @@ dependencies:
   # 고친 베타에 고정한다. 6.2.0 안정판이 나오면 ^6.2.0 으로 바꾼다.
   flutter_inappwebview: 6.2.0-beta.3
   url_launcher: ^6.3.3
+  package_info_plus: ^10.2.2
 
 dev_dependencies:
   flutter_test:

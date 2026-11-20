@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Flutter (Android + iOS only) WebView shell for the staff mobile web app `whale-erp-new-staff` (Next.js, sibling repo `../whale-erp-new-staff`; older notes call it `whale-erp-staff`). The app itself has almost no UI: it loads the web app full screen and adds native glue (back button, external links, pull-to-refresh, error/retry, splash). Bundle ID `kr.co.whaleerp.staff`, display name `WHALEERP`, portrait only.
+A Flutter (Android + iOS only) WebView shell for the staff mobile web app `whale-erp-new-staff` (Next.js, sibling repo `../whale-erp-new-staff`; older notes call it `whale-erp-staff`). The app itself has almost no UI: it loads the web app full screen and adds native glue (back button, external links, pull-to-refresh, error/retry, splash). Bundle ID `kr.co.whaleerp.staff`, display name 「웨일ERP 직원」, iPhone only (`TARGETED_DEVICE_FAMILY = "1"`), portrait only.
 
 ## Commands
 
@@ -20,7 +20,7 @@ dart run flutter_native_splash:create                      # after changing the 
 dart run flutter_launcher_icons                            # after changing the flutter_launcher_icons block
 ```
 
-`WEB_URL` defaults to the dev URL (`https://staff-dev.whaleerp.co.kr`) in `lib/main.dart`; there is a TODO to switch the default to prod once the prod URL exists. dev/prod are one app ID switched by the define, not flavors.
+`WEB_URL` defaults to the dev URL (`https://staff-dev.whaleerp.co.kr`) in `lib/main.dart`; the prod URL is `https://staff.whaleerp.co.kr`, and the TODO says to switch the default once its DNS is live (not yet as of 2026-11-19). dev/prod are one app ID switched by the define, not flavors.
 
 Local Android tooling on this machine: SDK at `/opt/homebrew/share/android-commandlinetools` (adb/emulator are not on PATH; use `platform-tools/adb`, `emulator/emulator`). AVD `whale_pixel` (Pixel 7, Android 16) lives in `~/.android/avd`. `avdmanager` from the Homebrew `cmdline-tools/latest` (v22) cannot create AVDs for the API 36 image; use `cmdline-tools/latest-2` (v23). `flutter run` here has failed to attach DDS after launch; the installed app still runs.
 
@@ -49,7 +49,7 @@ If a plan decision changes (tech, icon, name, bundle ID), edit the Obsidian note
 Everything lives in `lib/main.dart`.
 
 - `isInApp(uri, base)` is the navigation rule: same host as `WEB_URL` over http(s), or webview-internal schemes (`about`, `data`, `blob`, `javascript`), stay in the webview. Everything else (other hosts, `tel:`, `mailto:`) is cancelled in `shouldOverrideUrlLoading` and opened with `url_launcher` externally. It is the one unit-tested function (`test/widget_test.dart`); the webview itself is not testable in widget tests.
-- `WebScreen` wraps the `InAppWebView`: `PopScope` maps Android back to webview history, then `SystemNavigator.pop()`. A main-frame load error (except `CANCELLED`) shows `_ErrorView`. User-Agent gets `WhaleERPStaffApp` appended so the web app can detect the shell.
+- `WebScreen` wraps the `InAppWebView`: `PopScope` maps Android back to webview history, then `SystemNavigator.pop()`. A main-frame load error (except `CANCELLED`) shows `_ErrorView`. User-Agent gets `WhaleStaffApp/<version>` appended (`appUserAgent`, version from `package_info_plus` read in `main()` before `runApp`) so the web app can detect the shell. It is for detection only, never for authorization.
 
 ### Two-stage splash (the subtle part)
 
@@ -85,4 +85,4 @@ Because the foreground PNG already includes the 108dp safe-zone padding, `adapti
 
 ## Not done yet
 
-Release signing / iOS provisioning, prod URL, push notifications, camera/file upload permissions, JS bridge. iOS has never been built on this machine (no Xcode), so iOS behavior of the beta webview and splash is unverified.
+Release signing / iOS provisioning, prod URL default, push notifications, camera/file upload permissions, JS bridge. iOS builds and runs on the simulator here (Xcode 27.2, `flutter build ios --simulator`); it has not been run on a real iPhone.

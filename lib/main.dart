@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// TODO: prod 주소가 정해지면 기본값을 prod 로 바꾼다. dev 는 --dart-define=WEB_URL=... 로 넘긴다.
+// TODO: 운영 주소는 https://staff.whaleerp.co.kr 이다. 도메인이 열리면(2026-11-19 현재 DNS 미등록) 기본값을 운영으로 바꾼다.
+// 그 전까지 기본값은 dev 이고, 다른 주소는 --dart-define=WEB_URL=... 로 넘긴다.
 const webUrl = String.fromEnvironment(
   'WEB_URL',
   defaultValue: 'https://staff-dev.whaleerp.co.kr',
@@ -26,20 +28,27 @@ bool isInApp(Uri uri, Uri base) {
       uri.host == base.host;
 }
 
-void main() {
+/// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
+String appUserAgent(String version) => 'WhaleStaffApp/$version';
+
+Future<void> main() async {
   // 고래 이미지를 디코딩할 때까지 첫 프레임을 미룬다. OS 스플래시가 걷힐 때 고래가 한 프레임 비지 않게.
   WidgetsFlutterBinding.ensureInitialized().deferFirstFrame();
+  final info = await PackageInfo.fromPlatform();
   runApp(
-    const MaterialApp(
-      title: 'WHALEERP',
+    MaterialApp(
+      title: '웨일ERP 직원',
       debugShowCheckedModeBanner: false,
-      home: WebScreen(),
+      home: WebScreen(userAgent: appUserAgent(info.version)),
     ),
   );
 }
 
 class WebScreen extends StatefulWidget {
-  const WebScreen({super.key});
+  const WebScreen({super.key, required this.userAgent});
+
+  /// 기본 User-Agent 끝에 붙일 값.
+  final String userAgent;
 
   @override
   State<WebScreen> createState() => _WebScreenState();
@@ -93,7 +102,7 @@ class _WebScreenState extends State<WebScreen> {
                     InAppWebView(
                       initialUrlRequest: URLRequest(url: WebUri(webUrl)),
                       initialSettings: InAppWebViewSettings(
-                        applicationNameForUserAgent: 'WhaleERPStaffApp',
+                        applicationNameForUserAgent: widget.userAgent,
                         useShouldOverrideUrlLoading: true,
                       ),
                       pullToRefreshController: _refresh,
