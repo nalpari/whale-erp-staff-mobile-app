@@ -24,16 +24,14 @@ git config --get core.hooksPath     # 이미 다른 폴더를 쓰고 있는지
 ls "$(git rev-parse --git-common-dir)/hooks" 2>/dev/null | grep -v '\.sample$'   # 기본 폴더에 직접 넣은 훅이 있는지 (폴더가 없어도 없는 것)
 ```
 
-둘 다 비어 있으면 켠다.
+- 첫 줄이 `.githooks`를 출력하면 이미 켜진 상태다. 더 할 일이 없다.
+- 둘 다 아무것도 출력하지 않으면 켠다.
 
-```bash
-git config core.hooksPath .githooks
-```
+  ```bash
+  git config core.hooksPath .githooks
+  ```
 
-기존 훅이 있으면 경로를 덮어쓰지 말고, 지금 쓰는 훅 폴더의 `pre-commit`에서 `.githooks/pre-commit`을 불러 연결한다.
-
-- `pre-commit`이 이미 있으면: 그 파일 끝에 `"$(git rev-parse --show-toplevel)/.githooks/pre-commit" || exit 1`을 넣는다.
-- `pre-commit`이 없으면(예: `commit-msg`만 있음): 같은 폴더에 `pre-commit`을 새로 만들어 위 한 줄을 넣고 실행 권한을 준다(`chmod +x`).
+- 그 밖의 경우(다른 훅 폴더를 쓰고 있거나 기본 폴더에 훅이 있음)에는 켜지 않는다. 기존 훅을 어떻게 할지는 각자 판단한다.
 
 분석이 필요 없는 커밋(오타, 주석만 고친 경우)은 이 검사만 건너뛴다.
 
