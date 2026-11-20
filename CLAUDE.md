@@ -48,8 +48,8 @@ If a plan decision changes (tech, icon, name, bundle ID), edit the Obsidian note
 
 Everything lives in `lib/main.dart`.
 
-- `isInApp(uri, base)` is the navigation rule: same host as `WEB_URL` over http(s), or webview-internal schemes (`about`, `data`, `blob`, `javascript`), stay in the webview. Everything else (other hosts, `tel:`, `mailto:`) is cancelled in `shouldOverrideUrlLoading` and opened with `url_launcher` externally. It is the one unit-tested function (`test/widget_test.dart`); the webview itself is not testable in widget tests.
-- `WebScreen` wraps the `InAppWebView`: `PopScope` maps Android back to webview history, then `SystemNavigator.pop()`. A main-frame load error (except `CANCELLED`) shows `_ErrorView`. User-Agent gets `WhaleStaffApp/<version>` appended (`appUserAgent`, version from `package_info_plus` read in `main()` before `runApp`) so the web app can detect the shell. It is for detection only, never for authorization.
+- `isInApp(uri, base)` is the navigation rule: same host as `WEB_URL` over http(s), or webview-internal schemes (`about`, `data`, `blob`, `javascript`), stay in the webview. Everything else (other hosts, `tel:`, `mailto:`) is cancelled in `shouldOverrideUrlLoading` and opened with `url_launcher` externally. It, `appUserAgent` and `readAppVersion` are the unit-tested functions (`test/widget_test.dart`); the webview itself is not testable in widget tests.
+- `WebScreen` wraps the `InAppWebView`: `PopScope` maps Android back to webview history, then `SystemNavigator.pop()`. A main-frame load error (except `CANCELLED`) shows `_ErrorView`. User-Agent gets `WhaleStaffApp/<version>` appended (`appUserAgent`, version from `package_info_plus` read in `main()` before `runApp` via `readAppVersion`, which falls back to `unknown` on error or a 2 s timeout because `main()` holds the first frame while it waits) so the web app can detect the shell. It is for detection only, never for authorization.
 
 ### Two-stage splash (the subtle part)
 

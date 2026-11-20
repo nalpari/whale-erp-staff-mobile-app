@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:staff/main.dart';
 
 void main() {
@@ -20,5 +21,29 @@ void main() {
 
   test('User-Agent 접미사는 WhaleStaffApp/<앱 버전>', () {
     expect(appUserAgent('1.0.0'), 'WhaleStaffApp/1.0.0');
+  });
+
+  group('readAppVersion', () {
+    PackageInfo info(String version) => PackageInfo(
+          appName: 'staff',
+          packageName: 'kr.co.whaleerp.staff',
+          version: version,
+          buildNumber: '1',
+        );
+
+    test('읽은 버전을 그대로 돌려준다', () async {
+      expect(await readAppVersion(() async => info('1.0.0')), '1.0.0');
+    });
+
+    test('버전이 비어 있으면 unknown', () async {
+      expect(await readAppVersion(() async => info('')), 'unknown');
+    });
+
+    test('읽다가 실패해도 앱이 뜨도록 unknown 을 돌려준다', () async {
+      expect(
+        await readAppVersion(() async => throw Exception('채널 오류')),
+        'unknown',
+      );
+    });
   });
 }

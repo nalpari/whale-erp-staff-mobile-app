@@ -31,15 +31,32 @@ bool isInApp(Uri uri, Uri base) {
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
 String appUserAgent(String version) => 'WhaleStaffApp/$version';
 
+/// 앱 버전을 읽는다. 실패하거나 비어 있으면 `unknown`.
+/// main() 은 첫 프레임을 미룬 채 이 값을 기다리므로, 여기서 예외가 새거나 멈추면 앱이 OS 스플래시에서 멈춘다.
+Future<String> readAppVersion(Future<PackageInfo> Function() read) async {
+  try {
+    final version = (await read().timeout(const Duration(seconds: 2))).version;
+    return version.isEmpty ? 'unknown' : version;
+  } catch (e, s) {
+    FlutterError.reportError(FlutterErrorDetails(
+      exception: e,
+      stack: s,
+      library: 'main',
+      context: ErrorDescription('앱 버전을 읽지 못해 User-Agent 에 unknown 을 붙임'),
+    ));
+    return 'unknown';
+  }
+}
+
 Future<void> main() async {
   // 고래 이미지를 디코딩할 때까지 첫 프레임을 미룬다. OS 스플래시가 걷힐 때 고래가 한 프레임 비지 않게.
   WidgetsFlutterBinding.ensureInitialized().deferFirstFrame();
-  final info = await PackageInfo.fromPlatform();
+  final version = await readAppVersion(PackageInfo.fromPlatform);
   runApp(
     MaterialApp(
       title: '웨일ERP 직원',
       debugShowCheckedModeBanner: false,
-      home: WebScreen(userAgent: appUserAgent(info.version)),
+      home: WebScreen(userAgent: appUserAgent(version)),
     ),
   );
 }
