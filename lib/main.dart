@@ -46,11 +46,14 @@ enum LocationAccess {
   /// 권한은 허락인데 기기 위치(위치 서비스)가 꺼져 있다. 웹은 좌표를 받지 못한다.
   serviceDisabled,
 
-  /// 거부(다시 물을 수 있음) · 판단 불가 · 오류 · 시간 초과.
+  /// 거부(다시 물을 수 있음) · 판단 불가.
   denied,
 
   /// 영구 거부. OS 가 더는 창을 띄우지 않아 설정에서만 바꿀 수 있다.
-  deniedForever;
+  deniedForever,
+
+  /// 권한을 확인하다 오류가 나거나 시간이 넘었다. 사용자가 거부한 것이 아니므로 다시 시도하라고 안내한다.
+  failed;
 
   /// 웹뷰에 위치를 허락할지. 권한이 있으면 허락하고, 좌표 품질 문제는 안내로 알린다.
   bool get allowsWeb =>
@@ -64,8 +67,11 @@ enum LocationAccess {
 /// Android 는 영구 거부여도 checkPermission 이 denied 를 돌려줘서 requestPermission 까지 가지만,
 /// OS 가 창 없이 바로 거부하고 deniedForever 가 돌아온다.
 /// geolocator(Android)는 권한 창이 중단되면(빈 결과) 결과를 돌려주지 않아 future 가 끝나지 않는다.
-/// 그러면 웹의 위치 요청도 끝나지 않으므로 단계마다 [timeout] 으로 끊는다. 첫 확인의 오류 · 시간 초과는
-/// denied, 정확한 위치 재요청의 오류 · 시간 초과는 이미 가진 approximate 로 둔다. 둘 다 오류를 보고한다.
+/// 그러면 웹의 위치 요청도 끝나지 않으므로 플랫폼 호출마다 [timeout] 으로 끊고 오류를 보고한다.
+/// - 권한 확인 · 요청이 실패하면 failed(웹 거부, 다시 시도 안내).
+/// - 권한이 있는데 위치 서비스 · 정확도를 읽지 못하면 켜져 있고 정확한 것으로 보고 웹을 허락한다.
+/// - 정확한 위치 재요청이 실패하면 이미 가진 approximate 로 둔다.
+/// 시간 제한에는 사용자가 권한 창을 보고 고민하는 시간도 들어간다(알려진 한계).
 Future<LocationAccess> ensureLocationAccess({
   Future<LocationPermission> Function() check = Geolocator.checkPermission,
   Future<LocationPermission> Function() request = Geolocator.requestPermission,
@@ -76,13 +82,13 @@ Future<LocationAccess> ensureLocationAccess({
   VoidCallback? onAskPrecise,
   Duration timeout = const Duration(seconds: 60),
 }) async {
-  Future<LocationAccess> guarded(
-    Future<LocationAccess> Function() step,
-    LocationAccess fallback,
+  Future<T> guarded<T>(
+    Future<T> Function() call,
+    T fallback,
     String context,
   ) async {
     try {
-      return await step().timeout(timeout);
+      return await call().timeout(timeout);
     } catch (e, s) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -96,66 +102,120 @@ Future<LocationAccess> ensureLocationAccess({
     }
   }
 
+  /// 허락이 아니면 그 상태, 허락이면 null.
+  LocationAccess? blocked(LocationPermission? permission) =>
+      switch (permission) {
+        null => LocationAccess.failed,
+        LocationPermission.whileInUse || LocationPermission.always => null,
+        LocationPermission.deniedForever => LocationAccess.deniedForever,
+        _ => LocationAccess.denied,
+      };
+
   Future<LocationAccess> byAccuracy() async =>
-      await accuracy() == LocationAccuracyStatus.precise
+      await guarded(
+            accuracy,
+            LocationAccuracyStatus.precise,
+            '위치 정확도를 읽지 못해 정확한 위치로 봄',
+          ) ==
+          LocationAccuracyStatus.precise
       ? LocationAccess.precise
       : LocationAccess.approximate;
 
   var justAsked = false;
-  final first = await guarded(
+  final permission = await guarded<LocationPermission?>(
     () async {
-      var permission = await check();
-      if (permission == LocationPermission.denied) {
-        justAsked = true;
-        permission = await request();
-      }
-      if (permission == LocationPermission.deniedForever) {
-        return LocationAccess.deniedForever;
-      }
-      if (permission != LocationPermission.whileInUse &&
-          permission != LocationPermission.always) {
-        return LocationAccess.denied;
-      }
-      if (!await serviceEnabled()) return LocationAccess.serviceDisabled;
-      return byAccuracy();
+      final current = await check();
+      if (current != LocationPermission.denied) return current;
+      justAsked = true;
+      return request();
     },
-    LocationAccess.denied,
+    null,
     '위치 권한을 확인하지 못해 웹의 위치 요청을 거부함',
   );
+  final notGranted = blocked(permission);
+  if (notGranted != null) return notGranted;
 
+  if (!await guarded(serviceEnabled, true, '위치 서비스 상태를 읽지 못해 켜진 것으로 봄')) {
+    return LocationAccess.serviceDisabled;
+  }
+  final first = await byAccuracy();
   if (first != LocationAccess.approximate || !askPrecise || justAsked) {
     return first;
   }
+
   onAskPrecise?.call();
-  return guarded(
-    () async {
-      await request();
-      return byAccuracy();
-    },
-    LocationAccess.approximate,
+  final again = await guarded<LocationPermission?>(
+    request,
+    null,
     '정확한 위치를 다시 요청하지 못해 대략적 위치로 둠',
   );
+  if (again == null) return LocationAccess.approximate;
+  return blocked(again) ?? await byAccuracy();
 }
 
-/// 위치 상태에 맞춰 사용자에게 띄울 안내. 안내할 것이 없으면 null.
-/// [appSettings] 가 true 면 앱 설정, false 면 기기 위치 설정을 연다.
-({String message, String action, bool appSettings})? locationGuide(
-  LocationAccess access,
-) => switch (access) {
+/// 웹뷰 위치 요청을 한 줄로 세운다. 권한 창이 떠 있는 동안 온 요청은 같은 결과를 기다린다
+/// (겹쳐 부르면 geolocator 가 앞 요청의 결과를 잃는다). 「대략적 위치」면 정확한 위치로 바꿀지
+/// 앱을 켠 동안 한 번만 다시 묻는다. 페이지마다 물으면 귀찮다.
+class LocationGate {
+  LocationGate(this._ensure);
+
+  final Future<LocationAccess> Function({
+    required bool askPrecise,
+    VoidCallback? onAskPrecise,
+  })
+  _ensure;
+  Future<LocationAccess>? _pending;
+  bool _askedPrecise = false;
+
+  /// 위치 상태와, 이 호출이 확인을 시작했는지. 안내는 시작한 쪽만 띄운다.
+  Future<({LocationAccess access, bool started})> request() async {
+    final existing = _pending;
+    if (existing != null) return (access: await existing, started: false);
+    final pending = _pending = _ensure(
+      askPrecise: !_askedPrecise,
+      onAskPrecise: () => _askedPrecise = true,
+    ).whenComplete(() => _pending = null);
+    return (access: await pending, started: true);
+  }
+}
+
+/// 사용자에게 띄울 위치 안내. 안내할 것이 없으면 null.
+/// [action] 이 있으면 누를 때 [appSettings] 가 true 면 앱 설정, false 면 기기 위치 설정을 연다.
+/// 설정을 열지 못하면 [fallback] 을 띄운다.
+typedef LocationGuide = ({
+  String message,
+  String? action,
+  bool appSettings,
+  String fallback,
+});
+
+const _appSettingsFallback =
+    '설정을 열지 못했어요. 휴대폰 설정 > 애플리케이션 > 웨일ERP 직원 > 권한에서 위치를 허용해 주세요.';
+
+LocationGuide? locationGuide(LocationAccess access) => switch (access) {
   LocationAccess.approximate => (
     message: '정확한 위치가 꺼져 있어 출퇴근 위치가 맞지 않을 수 있어요.',
     action: '설정',
     appSettings: true,
+    fallback: _appSettingsFallback,
   ),
   LocationAccess.deniedForever => (
     message: '위치 권한이 꺼져 있어요. 출퇴근하려면 설정에서 위치를 허용해 주세요.',
     action: '설정',
     appSettings: true,
+    fallback: _appSettingsFallback,
   ),
   LocationAccess.serviceDisabled => (
     message: '휴대폰 위치가 꺼져 있어요. 출퇴근하려면 위치를 켜 주세요.',
     action: '위치 켜기',
     appSettings: false,
+    fallback: '위치 설정을 열지 못했어요. 휴대폰 빠른 설정에서 위치를 켜 주세요.',
+  ),
+  LocationAccess.failed => (
+    message: '위치 권한을 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+    action: null,
+    appSettings: false,
+    fallback: '',
   ),
   LocationAccess.precise || LocationAccess.denied => null,
 };
@@ -222,49 +282,72 @@ class _WebScreenState extends State<WebScreen> {
   bool _failed = false;
   bool _loaded = false;
   bool _splashGone = false;
-  // 권한 창이 떠 있는 동안 온 요청은 같은 결과를 기다린다. 겹쳐 부르면 geolocator 가 앞 요청의 결과를 잃는다.
-  Future<LocationAccess>? _locationAccess;
-  // 「대략적 위치」면 정확한 위치로 바꿀지 앱을 켠 동안 한 번만 다시 묻는다. 페이지마다 물으면 귀찮다.
-  bool _askedPrecise = false;
+  final _locationGate = LocationGate(
+    ({required askPrecise, onAskPrecise}) => ensureLocationAccess(
+      askPrecise: askPrecise,
+      onAskPrecise: onAskPrecise,
+    ),
+  );
+  // 스플래시가 떠 있는 동안 나온 안내. 첫 페이지가 그려지면 띄운다.
+  LocationGuide? _pendingGuide;
 
   Future<bool> _ensureLocationPermission() async {
-    final existing = _locationAccess;
-    if (existing != null) return (await existing).allowsWeb;
-    // 이 요청이 확인을 시작한 쪽이다. 같이 기다린 요청은 안내를 다시 띄우지 않는다.
-    final pending = _locationAccess = ensureLocationAccess(
-      askPrecise: !_askedPrecise,
-      onAskPrecise: () => _askedPrecise = true,
-    ).whenComplete(() => _locationAccess = null);
-    final access = await pending;
-    if (mounted) _showLocationGuide(access);
-    return access.allowsWeb;
+    final result = await _locationGate.request();
+    if (result.started && mounted) {
+      final guide = locationGuide(result.access);
+      if (guide != null) {
+        if (_loaded) {
+          _showLocationGuide(guide);
+        } else {
+          _pendingGuide = guide;
+        }
+      }
+    }
+    return result.access.allowsWeb;
   }
 
-  void _showLocationGuide(LocationAccess access) {
-    final guide = locationGuide(access);
-    // 첫 페이지가 그려지기 전이면 스플래시 위에 뜨므로 띄우지 않는다.
-    if (guide == null || !_loaded) return;
-    ScaffoldMessenger.of(context)
+  void _showLocationGuide(LocationGuide guide) {
+    final messenger = ScaffoldMessenger.of(context);
+    final action = guide.action;
+    messenger
       ..removeCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: Text(guide.message),
           duration: const Duration(seconds: 6),
-          // action 이 있으면 SnackBar 는 기본으로 사라지지 않고 하단 Dock 을 가린다. 시간이 지나면 닫는다.
-          persist: false,
+          // action 이 있으면 SnackBar 는 기본으로 사라지지 않고 하단 Dock 을 가린다. 시간이 지나면 닫되,
+          // 화면 읽기 프로그램을 쓰면 버튼까지 갈 시간이 필요하니 남겨 둔다.
+          persist: MediaQuery.accessibleNavigationOf(context),
           showCloseIcon: true,
-          action: SnackBarAction(
-            label: guide.action,
-            onPressed: guide.appSettings
-                ? Geolocator.openAppSettings
-                : Geolocator.openLocationSettings,
-          ),
+          action: action == null
+              ? null
+              : SnackBarAction(
+                  label: action,
+                  onPressed: () async {
+                    final opened = await (guide.appSettings
+                        ? Geolocator.openAppSettings()
+                        : Geolocator.openLocationSettings());
+                    if (!opened && mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(guide.fallback),
+                          duration: const Duration(seconds: 8),
+                          showCloseIcon: true,
+                        ),
+                      );
+                    }
+                  },
+                ),
         ),
       );
   }
 
   void _markLoaded() {
-    if (!_loaded) setState(() => _loaded = true);
+    if (_loaded) return;
+    setState(() => _loaded = true);
+    final guide = _pendingGuide;
+    _pendingGuide = null;
+    if (guide != null) _showLocationGuide(guide);
   }
 
   Future<void> _back() async {
