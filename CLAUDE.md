@@ -29,8 +29,10 @@ Local Android tooling on this machine: SDK at `/opt/homebrew/share/android-comma
 Create worktrees with Orca, not Claude Code's `EnterWorktree` (that one lands in `.claude/worktrees/`, which Orca does not register, so it shows up as a folder inside `main`). Follow the same naming as the other WHALEERP repos (`whale-erp-api`, `whale-erp-new-front`, `whale-erp-new-staff`): one lowercase English Pokémon name, with no `chang-su98/` prefix, used for both the worktree and the branch (`togepi`, `gengar`). Orca's default prefixes the git username and picks a random word (for example `chang-su98/pacu`), so always pass `--branch`. The `--repo` path below is this machine's main checkout; on another machine use that clone's path (`git rev-parse --show-toplevel` from the main checkout):
 
 ```bash
-orca worktree create --repo path:/Users/kcs/workspace/WHALEERP/whale-erp-staff-mobile-app --name <pokemon> --branch <pokemon> --no-parent --json
+orca worktree create --repo path:/Users/kcs/workspace/WHALEERP/whale-erp-staff-mobile-app --name togepi --branch togepi --no-parent --json
 ```
+
+Replace `togepi` in both `--name` and `--branch` with the new name.
 
 Pick a name that is not already a branch here (`git branch -a`). Ticket-scoped branches like `WHALEERP-659-contract-status-names` also exist in the other repos; use that form only when the work is tied to a Plane issue.
 
