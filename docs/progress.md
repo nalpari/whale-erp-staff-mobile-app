@@ -47,7 +47,7 @@
 | 항목 | 상태 | 근거 |
 | --- | --- | --- |
 | viewport (`viewportFit`, `themeColor`) | ❌ | `src/app/layout.tsx`에 `export const viewport`가 없다. 앱은 Flutter `SafeArea`가 노치를 피하므로 급하지는 않다 |
-| 웹뷰 감지 · 브리지 모듈 | ❌ | `WhaleStaffApp/`를 감지하는 코드도, `native-bridge` 모듈도 없다 |
+| 웹뷰 감지 · 브리지 모듈 | ❌ | 앱 쪽 브리지는 생겼다(2026-11-20, 약속은 [native-bridge.md](native-bridge.md)). 웹에는 `WhaleStaffApp/`를 감지하는 코드도, `native-bridge.ts` 모듈도 아직 없다 |
 | 위치 조작 감지 연결 | ❌ | `check-in-screen.tsx`가 아직 `mocked: false`로 고정돼 있다 |
 | 다운로드 · 뒤로 가기 브리지 | ❌ | 없음. 급여 PDF 라우트(`pay/[payslipId]/pdf/route.ts`)는 실패하면 평문 글자를 돌려줘 앱 화면을 덮을 수 있다. 계약서 라우트처럼 상세로 돌려보내게 바꾸는 것을 검토 |
 | `assetlinks.json` · `apple-app-site-association` | ❌ | `public/`에 없다. 번들 ID를 확정한 뒤에 만든다 |
@@ -69,7 +69,7 @@
 1. **1절 코드 반영**: 끝났다(2026-11-20). 운영 URL 기본값 전환만 도메인이 열린 뒤에 한다
 2. **1단계 마무리 확인**: 실기기에서 로그인 → 앱 강제 종료 → 재실행 후 로그인 유지(쿠키 flush), 키보드와 Dock, 서명 패드와 당겨서 새로고침 충돌
 3. **위치 권한 (2단계)**: 코드는 들어갔다(2026-11-20). Android는 허용 · 거부 경로만 에뮬레이터에서 확인했고, 정확한 위치 재요청 창과 설정 안내는 아직 못 봤다. iOS는 실기기 확인이 남았다. 웹 geolocation으로 출퇴근 화면을 지금 앱 안에서 테스트할 수 있다. iOS WKWebView는 OS 권한과 별도로 사이트 위치 확인 창을 띄울 수 있어, 실기기에서 몇 번 뜨는지 본다(5번 네이티브 측정으로 바뀌면 사라진다)
-4. **JS 브리지 골격**: 앱에 `addJavaScriptHandler`, 웹에 `native-bridge.ts`. 웹은 UA `WhaleStaffApp/`으로 앱 안인지 판별한다. 핸들러는 `WEB_URL` 출처의 최상위 프레임에서 온 호출만 받는다(UA는 감지용일 뿐 권한 확인에 쓰지 않는다)
+4. **JS 브리지 골격**: 앱 쪽은 끝났다(2026-11-20). `lib/native_bridge.dart`가 `WEB_URL`과 같은 출처(https · 호스트 · 포트)의 맨 위 화면 호출만 받고, 답은 `{ok, data}` / `{ok: false, error}` 하나로 맞췄다. 첫 기능은 `appInfo`. 약속은 [native-bridge.md](native-bridge.md). **남은 일: 웹에 `native-bridge.ts`**(UA `WhaleStaffApp/`으로 앱 안 판별, `callHandler`를 한 모듈에 모음). 5번 위치 측정을 붙일 때 같이 만드는 게 자연스럽다
 5. **위치 측정 · 조작 감지**: 핸들러가 한 번 잰 좌표와 조작 여부(Android `isMock()`, API 31+ · 24~30은 `isFromMockProvider()` / iOS `isSimulatedBySoftware`)를 함께 넘긴다. 웹 `check-in-screen.tsx`는 앱 안이면 `navigator.geolocation` 대신 이 값으로 좌표와 `mocked`를 채운다
 6. **파일 받기**: 급여 PDF는 `onDownloadStartRequest`에서 웹뷰 쿠키를 실어 받고, 계약서는 S3 호스트로 가는 이동을 가로채 받는다. 둘 다 저장 후 공유 시트
 7. 3단계 이후(딥링크 · 푸시 · 강제 업데이트)는 번들 ID 확정과 api 팀 협의가 먼저다. 협의 일정을 잡아 둔다
@@ -97,3 +97,4 @@
 - 2026-11-20 · `4ac0288` · PR #3 pr-agent 리뷰 반영. 위치를 허락하는 출처 검사에 포트를 더해 같은 출처(https · 호스트 · 포트)만 허락. 권한 확인과 요청에 시간 제한을 따로 걸어, 확인이 시간을 넘긴 뒤 늦게 끝나도 권한 창이 뜨지 않게 함. 첫 페이지 전 보류 안내를 최신 결과로 덮어, 다시 확인해 괜찮아졌으면 지난 실패 안내를 띄우지 않음. 테스트 추가(32개)
 - 2026-11-20 · `b377177` · PR #3 pr-agent 재리뷰 반영. OS 권한 창 요청을 `SingleFlight`로 한 번에 하나만 돌려, 시간 제한이 지나 창이 떠 있는 동안 온 요청이 권한을 다시 요청하지 않고 그 창 결과를 기다림. 첫 페이지 뒤 다시 확인해 괜찮아지면 떠 있는 위치 안내를 닫음. 테스트 추가(35개)
 - 2026-11-20 · `faf6437` · PR #3 pr-agent 재리뷰 반영. 직전에 넣은 권한 요청 단일화(`SingleFlight`)를 되돌림. geolocator(Android)는 권한 창이 취소되면 결과를 돌려주지 않아, 앞 요청을 기다리게 하면 앱을 다시 켤 때까지 위치를 못 씀. 시간 초과 뒤 요청은 권한을 새로 요청하고(앞 결과 콜백을 덮어씀) 이를 테스트로 고정(33개)
+- 2026-11-20 · `996b013` · JS 브리지 앱 쪽 골격. `NativeBridge`(출처 · 맨 위 화면 검사, 답 형식 통일)와 첫 기능 `appInfo`, `isTrustedOrigin`을 `lib/native_bridge.dart`로 옮김, 약속 문서 `docs/native-bridge.md`. 에뮬레이터에서 맨 위 화면 호출은 성공, iframe 호출은 `forbidden` 확인

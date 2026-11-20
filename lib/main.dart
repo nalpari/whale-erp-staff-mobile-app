@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'native_bridge.dart';
 
 // TODO: 운영 주소는 https://staff.whaleerp.co.kr 이다. 도메인이 열리면(2026-11-19 현재 DNS 미등록) 기본값을 운영으로 바꾼다.
 // 그 전까지 기본값은 dev 이고, 다른 주소는 --dart-define=WEB_URL=... 로 넘긴다.
@@ -27,18 +30,6 @@ bool isInApp(Uri uri, Uri base) {
   }
   return (uri.scheme == 'http' || uri.scheme == 'https') &&
       uri.host == base.host;
-}
-
-/// 웹이 위치를 물어도 되는 출처인지. 웹 주소와 같은 출처(https · 호스트 · 포트)만 허락한다.
-/// 같은 호스트라도 포트가 다르면 다른 서비스일 수 있어 거부한다. [Uri.port] 는 생략된 포트를 443 으로 본다.
-bool isTrustedOrigin(String origin, Uri base) {
-  final uri = Uri.tryParse(origin);
-  return uri != null &&
-      uri.scheme == 'https' &&
-      base.scheme == 'https' &&
-      uri.host.isNotEmpty &&
-      uri.host == base.host &&
-      uri.port == base.port;
 }
 
 /// 위치를 쓸 수 있는 상태. 웹의 위치 요청을 허락할지와 사용자에게 띄울 안내를 정한다.
@@ -267,16 +258,16 @@ Future<void> main() async {
     MaterialApp(
       title: '웨일ERP 직원',
       debugShowCheckedModeBanner: false,
-      home: WebScreen(userAgent: appUserAgent(version)),
+      home: WebScreen(version: version),
     ),
   );
 }
 
 class WebScreen extends StatefulWidget {
-  const WebScreen({super.key, required this.userAgent});
+  const WebScreen({super.key, required this.version});
 
-  /// 기본 User-Agent 끝에 붙일 값.
-  final String userAgent;
+  /// 앱 버전. User-Agent 접미사와 브리지 `appInfo` 에 쓴다.
+  final String version;
 
   @override
   State<WebScreen> createState() => _WebScreenState();
@@ -285,6 +276,15 @@ class WebScreen extends StatefulWidget {
 class _WebScreenState extends State<WebScreen> {
   final _base = Uri.parse(webUrl);
   InAppWebViewController? _controller;
+  late final _bridge = NativeBridge(
+    base: _base,
+    handlers: {
+      'appInfo': appInfoHandler(
+        version: widget.version,
+        platform: defaultTargetPlatform,
+      ),
+    },
+  );
   late final _refresh = PullToRefreshController(
     settings: PullToRefreshSettings(color: primary),
     onRefresh: () => _controller?.reload(),
@@ -405,12 +405,14 @@ class _WebScreenState extends State<WebScreen> {
                     InAppWebView(
                       initialUrlRequest: URLRequest(url: WebUri(webUrl)),
                       initialSettings: InAppWebViewSettings(
-                        applicationNameForUserAgent: widget.userAgent,
+                        applicationNameForUserAgent: appUserAgent(widget.version),
                         useShouldOverrideUrlLoading: true,
                       ),
                       pullToRefreshController: _refresh,
-                      onWebViewCreated: (controller) =>
-                          _controller = controller,
+                      onWebViewCreated: (controller) {
+                        _controller = controller;
+                        _bridge.attach(controller);
+                      },
                       // Android 전용: 웹이 navigator.geolocation 을 부르면 여기로 온다. 웹뷰는 자체 확인 창이 없어서
                       // OS 권한 창만 뜬다. 앱 안의 출퇴근 위치는 나중에 네이티브가 직접 잰다(계획 결정 8).
                       // 이 처리는 웹이 geolocation 을 부를 때를 대비한 것이다. retain 을 끄면 웹뷰가 출처별 허락을

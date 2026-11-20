@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:staff/main.dart';
+import 'package:staff/native_bridge.dart';
 
 void main() {
   final base = Uri.parse('https://staff-dev.whaleerp.co.kr');
@@ -472,6 +474,75 @@ void main() {
       const origin = 'https://staff-dev.whaleerp.co.kr';
       expect(await allowGeolocation(origin, base, () async => true), isTrue);
       expect(await allowGeolocation(origin, base, () async => false), isFalse);
+    });
+  });
+
+  group('NativeBridge', () {
+    const origin = 'https://staff-dev.whaleerp.co.kr';
+    final bridge = NativeBridge(
+      base: base,
+      handlers: {
+        'echo': (args) => args,
+        'boom': (_) => throw StateError('x'),
+        'appInfo': appInfoHandler(
+          version: '1.0.0',
+          platform: TargetPlatform.iOS,
+        ),
+      },
+    );
+
+    test('같은 출처의 맨 위 화면 호출은 기능을 부르고 data 로 답한다', () async {
+      expect(
+        await bridge.handle('echo', origin: origin, isMainFrame: true, args: [1, 'a']),
+        {'ok': true, 'data': [1, 'a']},
+      );
+    });
+
+    test('iframe 에서 온 호출은 막는다', () async {
+      expect(
+        await bridge.handle('echo', origin: origin, isMainFrame: false),
+        {'ok': false, 'error': BridgeError.forbidden},
+      );
+    });
+
+    test('다른 출처 · 다른 포트 · http 에서 온 호출은 막는다', () async {
+      for (final other in [
+        'https://evil.example.com',
+        'https://staff-dev.whaleerp.co.kr:8443',
+        'http://staff-dev.whaleerp.co.kr',
+        'null',
+      ]) {
+        expect(
+          await bridge.handle('echo', origin: other, isMainFrame: true),
+          {'ok': false, 'error': BridgeError.forbidden},
+          reason: other,
+        );
+      }
+    });
+
+    test('없는 기능 이름은 막는다', () async {
+      expect(
+        await bridge.handle('nope', origin: origin, isMainFrame: true),
+        {'ok': false, 'error': BridgeError.forbidden},
+      );
+    });
+
+    testWidgets('기능이 예외를 던지면 failed 로 답하고 앱은 계속 돈다', (tester) async {
+      expect(
+        await bridge.handle('boom', origin: origin, isMainFrame: true),
+        {'ok': false, 'error': BridgeError.failed},
+      );
+      expect(tester.takeException(), isA<StateError>());
+    });
+
+    test('appInfo 는 버전과 운영체제를 돌려준다', () async {
+      expect(
+        await bridge.handle('appInfo', origin: origin, isMainFrame: true),
+        {
+          'ok': true,
+          'data': {'version': '1.0.0', 'platform': 'ios'},
+        },
+      );
     });
   });
 }
