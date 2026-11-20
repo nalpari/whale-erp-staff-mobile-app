@@ -88,61 +88,26 @@ void main() {
     expect(isTrustedOrigin('', base), isFalse);
   });
 
-  group('SingleFlight', () {
-    test('돌고 있는 동안에는 다시 부르지 않고 같은 결과를 기다린다', () async {
-      final flight = SingleFlight<int>();
-      final gate = Completer<int>();
-      var calls = 0;
-      Future<int> call() {
-        calls++;
-        return gate.future;
-      }
-
-      final a = flight.run(call);
-      final b = flight.run(call);
-      expect(calls, 1);
-      gate.complete(7);
-      expect(await a, 7);
-      expect(await b, 7);
-      await flight.run(() async => calls++);
-      expect(calls, 2);
-    });
-
-    test('실패해도 다음 호출은 새로 부른다', () async {
-      final flight = SingleFlight<int>();
-      await expectLater(
-        flight.run(() async => throw Exception('실패')),
-        throwsException,
-      );
-      expect(await flight.run(() async => 3), 3);
-    });
-
-    testWidgets('시간 제한이 지나도 권한 창이 닫히기 전에는 다시 요청하지 않는다', (tester) async {
-      final flight = SingleFlight<LocationPermission>();
-      final dialog = Completer<LocationPermission>();
-      var requests = 0;
-      Future<LocationAccess> ask() => ensureLocationAccess(
-        check: () async => LocationPermission.denied,
-        request: () => flight.run(() {
-          requests++;
-          return dialog.future;
-        }),
-        accuracy: () async => LocationAccuracyStatus.precise,
-        serviceEnabled: () async => true,
-      );
-      LocationAccess? first;
-      ask().then((v) => first = v);
-      await tester.pump(const Duration(seconds: 60));
-      expect(first, LocationAccess.failed);
-      expect(tester.takeException(), isA<TimeoutException>());
-      LocationAccess? second;
-      ask().then((v) => second = v);
-      await tester.pump();
-      expect(requests, 1);
-      dialog.complete(LocationPermission.whileInUse);
-      await tester.pump();
-      expect(second, LocationAccess.precise);
-    });
+  testWidgets('권한 창이 결과 없이 시간을 넘기면 다음 요청은 권한을 새로 요청한다', (tester) async {
+    // geolocator(Android)는 창이 취소되면 결과를 돌려주지 않는다. 앞 요청을 기다리면 다시 시도할 수 없다.
+    var requests = 0;
+    final answers = [
+      Completer<LocationPermission>().future,
+      Future.value(LocationPermission.whileInUse),
+    ];
+    Future<LocationAccess> ask() => ensureLocationAccess(
+      check: () async => LocationPermission.denied,
+      request: () => answers[requests++],
+      accuracy: () async => LocationAccuracyStatus.precise,
+      serviceEnabled: () async => true,
+    );
+    LocationAccess? first;
+    ask().then((v) => first = v);
+    await tester.pump(const Duration(seconds: 60));
+    expect(first, LocationAccess.failed);
+    expect(tester.takeException(), isA<TimeoutException>());
+    expect(await ask(), LocationAccess.precise);
+    expect(requests, 2);
   });
 
   group('ensureLocationAccess', () {

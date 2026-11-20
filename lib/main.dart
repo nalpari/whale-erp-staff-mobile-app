@@ -163,16 +163,6 @@ Future<LocationAccess> ensureLocationAccess({
   return blocked(again) ?? await byAccuracy();
 }
 
-/// 같은 비동기 호출을 한 번에 하나만 돌린다. 돌고 있으면 새로 부르지 않고 그 결과를 같이 기다린다.
-/// 위치 권한 창에 쓴다. 시간 제한([ensureLocationAccess] 의 timeout)은 웹에 돌려줄 답만 끊고 OS 권한 창은
-/// 그대로 떠 있으므로, 그동안 온 요청이 requestPermission 을 다시 부르면 결과 콜백이 엉킨다.
-class SingleFlight<T> {
-  Future<T>? _running;
-
-  Future<T> run(Future<T> Function() call) =>
-      _running ??= call().whenComplete(() => _running = null);
-}
-
 /// 웹뷰 위치 요청을 한 줄로 세운다. 권한 창이 떠 있는 동안 온 요청은 같은 결과를 기다린다
 /// (겹쳐 부르면 geolocator 가 앞 요청의 결과를 잃는다). 「대략적 위치」면 정확한 위치로 바꿀지
 /// 앱을 켠 동안 한 번만 다시 묻는다. 페이지마다 물으면 귀찮다.
@@ -302,13 +292,14 @@ class _WebScreenState extends State<WebScreen> {
   bool _failed = false;
   bool _loaded = false;
   bool _splashGone = false;
-  // OS 권한 창은 시간 제한이 지나도 떠 있을 수 있어, 창이 닫히기 전에는 다시 띄우지 않는다.
-  final _permissionRequest = SingleFlight<LocationPermission>();
-  late final _locationGate = LocationGate(
+  // 시간 제한이 지난 뒤 온 요청은 권한을 새로 요청한다. 앞 요청을 기다리게 하면 안 된다:
+  // geolocator(Android)는 권한 창이 취소되면(빈 결과) 앞 요청을 영영 끝내지 않아 앱을 다시 켤 때까지
+  // 위치를 못 쓴다. 새 요청은 앞 요청의 결과 콜백을 덮어쓰므로, 창이 아직 떠 있었다면 그 창의 결과는
+  // 새 요청이 받는다(앞 요청은 이미 시간 초과로 웹에 답했다).
+  final _locationGate = LocationGate(
     ({required askPrecise, onAskPrecise}) => ensureLocationAccess(
       askPrecise: askPrecise,
       onAskPrecise: onAskPrecise,
-      request: () => _permissionRequest.run(Geolocator.requestPermission),
     ),
   );
   // 지금 떠 있는 위치 안내. 닫히면 null.
