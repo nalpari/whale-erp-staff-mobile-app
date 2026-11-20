@@ -13,7 +13,7 @@
 | 껍데기 기술 | **Flutter** (Capacitor에서 변경) | Flutter + `flutter_inappwebview` 6.2.0-beta.3 | ✅ 일치. 브리지는 `addJavaScriptHandler` ↔ `window.flutter_inappwebview.callHandler`로 짠다 |
 | 최소 OS (4번) | **iOS 15.4+** (2026-11-20) · **Android 7 (API 24)+** | iOS 15.4 (`IPHONEOS_DEPLOYMENT_TARGET`, 2026-11-20 반영) · Android `flutter.minSdkVersion`(24) · 아이콘 `min_sdk_android: 24` | ✅ 일치. Flutter 기본값이 바뀌어도 흔들리지 않게 `minSdk = 24`로 못박아 두는 편이 낫다 |
 | 기기 범위 (5번) | 계획대로 휴대전화 전용 · 세로 고정 | iOS `TARGETED_DEVICE_FAMILY = "1,2"` (iPad 포함) | ❌ `project.pbxproj`에서 `"1"`로 바꾸고 `UISupportedInterfaceOrientations~ipad`를 지운다 |
-| 아이콘 · 스플래시 (15번) | 계획대로 남보라 `#4C4DDC` 바탕에 흰 고래 (`~/Downloads/icons/`) | `#0a0a0a` 바탕에 노란 고래 `#f7fe57` | ❌ 원본을 `assets/`로 옮기고 `pubspec.yaml`의 두 패키지 설정, `main.dart`의 `splashColor` · `splashLogo` · `splashWhale`, CLAUDE.md · README의 이미지 설명을 같이 바꾼다 |
+| 아이콘 · 스플래시 (15번) | 계획대로 남보라 `#4C4DDC` 바탕에 흰 고래. 2026-11-20 `~/Downloads/icons/candidates/`의 후보 A로 확정 | 후보 A 원본을 `assets/source/`에 넣고 아이콘 · 스플래시 이미지를 다시 만듦. 바탕색 `#4C4DDC`, 로딩 링 흰색 (2026-11-20) | ✅ 일치. 실기기 · 에뮬레이터에서 OS 스플래시 → 앱 스플래시 이어짐은 아직 못 봤다 |
 | 앱 이름 (3번) | 계획대로 「웨일ERP 직원」 | `WHALEERP` (Android `android:label`, iOS `CFBundleDisplayName`, `MaterialApp.title`) | ❌ 세 곳을 바꾼다 |
 | 운영 URL (6번) | 계획대로 `staff.whaleerp.co.kr` | 기본값 dev, 코드 TODO는 "prod 주소 미정" | ❌ TODO를 운영 주소로 고친다. 기본값을 운영으로 바꾸는 건 도메인이 열린 뒤다. 2026-11-19 현재 `staff.whaleerp.co.kr`은 DNS가 잡히지 않는다 |
 | 웹뷰 감지 UA | 계획대로 `WhaleStaffApp/<앱 버전>` (예 `WhaleStaffApp/1.0`) | `WhaleERPStaffApp` (버전 없음) | ❌ 앱 버전을 붙여 바꾼다(버전 읽기에 `package_info_plus` 등). README · CLAUDE.md도 같이. 웹 감지 코드는 아직 없어서 깨질 곳은 없다 |
@@ -29,7 +29,7 @@
 | 외부 링크 | ✅ | `isInApp` + `url_launcher`, 단위 테스트 있음 |
 | Android 뒤로 가기 | 🟡 | 웹 히스토리 → 앱 종료는 됨. 바텀시트(`<dialog>`) 먼저 닫기는 웹과 브리지로 맞춰야 한다 |
 | 오프라인 · 오류 화면 | ✅ | `_ErrorView` + 다시 시도 |
-| 스플래시 · 아이콘 · 상태바 | 🟡 | 동작은 끝. 확정 시안으로 이미지를 바꿔야 한다(1절). 바탕이 밝은 남보라가 되면 스플래시 위 상태바 아이콘 색(`SystemUiOverlayStyle.light`)도 다시 본다 |
+| 스플래시 · 아이콘 · 상태바 | 🟡 | 확정 시안(후보 A)으로 이미지 교체 완료. 남은 일: 에뮬레이터 · 실기기에서 두 단계 스플래시 이어짐과 남보라 위 흰 상태바 아이콘(`SystemUiOverlayStyle.light`)이 잘 보이는지 확인 |
 | 키보드 | 🟡 | `adjustResize`는 있다. 하단 sticky Dock이 가리는지 실기기 확인이 남았다 |
 | **위치 권한** | ❌ | 매니페스트에 위치 권한이 없고 iOS `NSLocationWhenInUseUsageDescription`도 없다. Android 웹뷰 `onGeolocationPermissionsShowPrompt`도 처리하지 않는다. **지금 앱에서는 출퇴근 위치를 못 잡는다** |
 | 위치 측정 · 조작 감지 (결정 8) | ❌ | 2026-11-20 결정: 앱 안에서는 네이티브가 좌표와 조작 여부를 함께 넘긴다. 네이티브 측정 코드와 JS 핸들러가 둘 다 없다 |
@@ -65,7 +65,7 @@
 
 계획서의 진행 순서(1 껍데기 → 2 위치 · 파일 → 3 딥링크 → 4 푸시 → 5 스토어)로 보면 **1단계가 거의 끝났고 2단계는 시작 전**이다.
 
-1. **1절 코드 반영**: iPhone 전용, 앱 이름, 운영 URL TODO, User-Agent, 아이콘 · 스플래시 교체. 아이콘 교체가 가장 크다(두 단계 스플래시 불변식을 다시 맞춰야 한다)
+1. **1절 코드 반영**: iPhone 전용, 앱 이름, 운영 URL TODO, User-Agent. 아이콘 · 스플래시 교체는 끝났다(2026-11-20). 에뮬레이터에서 스플래시 이어짐만 확인한다
 2. **1단계 마무리 확인**: 실기기에서 로그인 → 앱 강제 종료 → 재실행 후 로그인 유지(쿠키 flush), 키보드와 Dock, 서명 패드와 당겨서 새로고침 충돌
 3. **위치 권한 (2단계, 최우선)**: Android 런타임 권한, iOS 사유 문구. 앱 안에서는 네이티브가 위치를 재므로 웹 geolocation 권한 창은 대비용으로만 처리한다. 출퇴근이 핵심 기능이라 이것 없이는 테스트를 못 한다
 4. **JS 브리지 골격**: 앱에 `addJavaScriptHandler`, 웹에 `native-bridge.ts`. 웹은 UA `WhaleStaffApp/`으로 앱 안인지 판별한다. 핸들러는 `WEB_URL` 출처의 최상위 프레임에서 온 호출만 받는다(UA는 감지용일 뿐 권한 확인에 쓰지 않는다)
@@ -83,3 +83,4 @@
 - 2026-11-20 · `0130205` · PR #1 봇 리뷰 반영(코드 변경 없음). JS 브리지는 허용한 출처의 최상위 프레임에서 온 호출만 받는다는 조건을 계획서와 다음 할 일에 추가. pre-commit 훅이 한글 경로, 이동, progress.md 삭제를 놓치던 문제를 고침
 - 2026-11-20 · `a093a39` · 결정 8 변경 반영(코드 변경 없음). 앱 안에서는 네이티브가 좌표와 조작 여부를 함께 넘기도록 위치 항목과 다음 할 일 3 · 5번을 고침
 - 2026-11-20 · 결정 8 반영 직후 · iOS 최소 버전 15.4 반영. `IPHONEOS_DEPLOYMENT_TARGET` 15.0 → 15.4(바텀시트 `<dialog>`가 15.4부터 동작), 최소 OS 행 갱신
+- 2026-11-20 · `ff4faf1` · 아이콘 · 스플래시 교체. `candidates/` 후보 A(`icon-a` · `splash-a` · `fg-solid`)를 `assets/source/`에 넣고, 스플래시 로고(고래 + 별, 대각선 720px)와 적응형 전경을 다시 만듦. 바탕 `#4C4DDC`, 로딩 링 흰색. 노란 고래 원본(`hf_…png`) 삭제. 1절 남은 코드 반영 4건

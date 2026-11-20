@@ -101,21 +101,22 @@ flutter:
 # 정지된 OS 스플래시. 끝나면 lib/main.dart 의 SplashOverlay 가 같은 고래를 띄운 채 둘레에 로딩 링을 돌린다.
 # 색이나 이미지를 바꾸면 SplashOverlay 도 같이 바꾸고 `dart run flutter_native_splash:create` 를 다시 돌린다.
 flutter_native_splash:
-  color: "#0a0a0a"
+  color: "#4C4DDC"
   image: assets/splash_logo.png
   android_12:
-    color: "#0a0a0a"
+    color: "#4C4DDC"
     image: assets/splash_logo_android12.png
 
 
 # 앱 아이콘. 이미지나 색을 바꾸면 `dart run flutter_launcher_icons` 를 다시 돌린다.
-# app_icon.png: 바탕을 채운 1024px(iOS, Android 7 이하). app_icon_foreground.png: 투명 전경(고래 대각선 ≤ 66dp).
+# app_icon.png: 바탕을 채운 1024px(iOS, Android 7 이하). app_icon_foreground.png: 투명 전경(고래 대각선 약 66dp).
+# 원본은 assets/source/ (icon-a.png, fg-solid.png, splash-a.png). 앱에는 묶이지 않는다.
 flutter_launcher_icons:
   android: true
   ios: true
   image_path: assets/app_icon.png
   min_sdk_android: 24
-  adaptive_icon_background: "#0a0a0a"
+  adaptive_icon_background: "#4C4DDC"
   adaptive_icon_foreground: assets/app_icon_foreground.png
   # 전경 PNG 에 108dp 기준 여백을 이미 넣었으니 패키지 기본 16% 여백은 끈다.
   adaptive_icon_foreground_inset: 0

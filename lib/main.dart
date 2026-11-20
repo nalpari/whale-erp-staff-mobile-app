@@ -12,13 +12,13 @@ const webUrl = String.fromEnvironment(
 const primary = Color(0xFF4C4DDC);
 
 // pubspec.yaml 의 flutter_native_splash 와 같은 값. 바꾸면 양쪽을 같이 바꾼다.
-const splashColor = Color(0xFF0A0A0A);
+const splashColor = primary;
 const splashLogo = AssetImage('assets/splash_logo.png');
 // flutter_native_splash 는 이미지를 4x 로 본다. 720px 이미지 → 180dp.
 const splashLogoSize = 180.0;
-// 고래(대각선 약 180dp)를 둘러싸는 로딩 링.
+// 고래와 별(묶음 대각선 180dp)을 둘러싸는 로딩 링.
 const splashRingSize = 210.0;
-const splashWhale = Color(0xFFF7FE57);
+const splashWhale = Colors.white;
 
 /// 앱 안에서 열 주소인지. 웹 주소와 같은 호스트의 http(s) 와 웹뷰 내부 스킴만 앱에서 연다.
 bool isInApp(Uri uri, Uri base) {
