@@ -47,5 +47,10 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# Claude Code 개인 설정
+# Claude Code 개인 설정 · 워크트리
 .claude/settings.local.json
+.claude/worktrees/
+
+# 로컬 환경 변수 (--dart-define-from-file 등)
+.env
+.env.*

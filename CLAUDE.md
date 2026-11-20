@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Flutter (Android + iOS only) WebView shell for the staff mobile web app `whale-erp-staff` (Next.js, sibling repo `../whale-erp-staff`). The app itself has almost no UI: it loads the web app full screen and adds native glue (back button, external links, pull-to-refresh, error/retry, splash). Bundle ID `kr.co.whaleerp.staff`, display name `WHALEERP`, portrait only.
+A Flutter (Android + iOS only) WebView shell for the staff mobile web app `whale-erp-new-staff` (Next.js, sibling repo `../whale-erp-new-staff`; older notes call it `whale-erp-staff`). The app itself has almost no UI: it loads the web app full screen and adds native glue (back button, external links, pull-to-refresh, error/retry, splash). Bundle ID `kr.co.whaleerp.staff`, display name `WHALEERP`, portrait only.
 
 ## Commands
 
@@ -23,6 +23,26 @@ dart run flutter_launcher_icons                            # after changing the 
 `WEB_URL` defaults to the dev URL (`https://staff-dev.whaleerp.co.kr`) in `lib/main.dart`; there is a TODO to switch the default to prod once the prod URL exists. dev/prod are one app ID switched by the define, not flavors.
 
 Local Android tooling on this machine: SDK at `/opt/homebrew/share/android-commandlinetools` (adb/emulator are not on PATH; use `platform-tools/adb`, `emulator/emulator`). AVD `whale_pixel` (Pixel 7, Android 16) lives in `~/.android/avd`. `avdmanager` from the Homebrew `cmdline-tools/latest` (v22) cannot create AVDs for the API 36 image; use `cmdline-tools/latest-2` (v23). `flutter run` here has failed to attach DDS after launch; the installed app still runs.
+
+## Worktrees and branches
+
+Create worktrees with Orca, not Claude Code's `EnterWorktree` (that one lands in `.claude/worktrees/`, which Orca does not register, so it shows up as a folder inside `main`). Follow the same naming as the other WHALEERP repos (`whale-erp-api`, `whale-erp-new-front`, `whale-erp-new-staff`): one lowercase English Pokémon name, with no `chang-su98/` prefix, used for both the worktree and the branch (`togepi`, `gengar`). Orca's default prefixes the git username and picks a random word (for example `chang-su98/pacu`), so always pass `--branch`. The `--repo` path below is this machine's main checkout; on another machine use that clone's path (`git rev-parse --show-toplevel` from the main checkout):
+
+```bash
+orca worktree create --repo path:/Users/kcs/workspace/WHALEERP/whale-erp-staff-mobile-app --name togepi --branch togepi --no-parent --json
+```
+
+Replace `togepi` in both `--name` and `--branch` with the new name.
+
+Pick a name that is not already a branch here (`git branch -a`). Ticket-scoped branches like `WHALEERP-659-contract-status-names` also exist in the other repos; use that form only when the work is tied to a Plane issue.
+
+## Plan tracking (every commit)
+
+`docs/webview-plan.md` is the plan, a copy of the user's Obsidian note `ObsidianNew/whale-erp-staff/앱-출시/웹뷰-앱-제작-할일.md` (vault `/Users/kcs/김창수/obsidian`) without the developer-account link. Flutter replaced the original Capacitor choice on 2026-11-19. `docs/progress.md` compares that plan against the code and lists what to do next.
+
+Any commit that touches `lib/`, `android/`, `ios/`, `assets/` or `pubspec.yaml` must include an updated `docs/progress.md`: re-check the changed items against the plan, update the status tables and the "다음에 할 일" order, and append one line to "분석 기록" (`date · HEAD at analysis time · summary`). When splitting work into several commits, update it in each app-code commit. `.githooks/pre-commit` enforces this; enable it per clone with `git config core.hooksPath .githooks` (it replaces the hooks directory, so check for existing hooks first; see `docs/README.md`). Do not bypass it unless the user asks; if they do, use `SKIP_PROGRESS_CHECK=1 git commit ...`, which skips only this check, never `--no-verify` (that skips every hook).
+
+If a plan decision changes (tech, icon, name, bundle ID), edit the Obsidian note first, note the date, then re-copy it to `docs/webview-plan.md` (drop the `관련: [[개발자-계정-등록-...]]` line) so the two do not drift.
 
 ## Architecture
 

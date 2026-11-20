@@ -1,13 +1,13 @@
 # WHALEERP 직원 앱 (whale-erp-staff-mobile-app)
 
-직원용 모바일웹 [whale-erp-staff](../whale-erp-staff)를 웹뷰로 띄우는 Android·iOS 앱입니다.
+직원용 모바일웹 [whale-erp-new-staff](https://github.com/nalpari/whale-erp-new-staff)를 웹뷰로 띄우는 Android·iOS 앱입니다.
 화면은 웹이 그리고, 앱은 웹뷰를 감싸 뒤로가기, 외부 링크, 새로고침, 오류 화면, 스플래시 같은 네이티브 동작을 맡습니다.
 
 | 항목 | 값 |
 | --- | --- |
 | 앱 이름 | WHALEERP |
 | 번들 ID / applicationId | `kr.co.whaleerp.staff` |
-| 플랫폼 | Android, iOS (iOS 15.0 이상, Android 최소 버전은 Flutter 기본값) |
+| 플랫폼 | Android, iOS (iOS 15.4 이상, Android 최소 버전은 Flutter 기본값) |
 | 화면 방향 | 세로 고정 |
 | Dart SDK | `^3.13.2` |
 

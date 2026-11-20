@@ -1,0 +1,23 @@
+#!/bin/sh
+# 앱 코드를 바꾸는 커밋에는 docs/progress.md 갱신을 같이 넣게 한다 (docs/README.md 참고).
+# 이 검사만 건너뛰려면: SKIP_PROGRESS_CHECK=1 git commit ...
+# (--no-verify 는 다른 훅까지 모두 건너뛰므로 쓰지 않는다)
+#
+# 출력 문자열을 정규식으로 거르지 않고 pathspec 으로 묻는다 — 한글 경로는 --name-only 가 따옴표로 감싸 정규식을 빠져나간다.
+# --no-renames: 앱 파일을 감시 경로 밖으로 옮겨도 삭제로 잡히게.
+
+[ "${SKIP_PROGRESS_CHECK:-}" = 1 ] && exit 0
+
+app_changes=$(git diff --cached --no-renames --name-only -- lib/ android/ ios/ assets/ pubspec.yaml) || exit 1
+[ -n "$app_changes" ] || exit 0
+
+# 진행 문서는 추가 · 수정만 갱신으로 인정한다 (삭제는 안 됨).
+progress_changes=$(git diff --cached --no-renames --name-only --diff-filter=AM -- docs/progress.md) || exit 1
+[ -n "$progress_changes" ] && exit 0
+
+cat >&2 <<'EOF'
+pre-commit: 앱 코드가 바뀌었는데 docs/progress.md 가 스테이징되지 않았습니다.
+docs/webview-plan.md 와 대조해 progress.md 의 상태 표, 다음에 할 일, 분석 기록을 갱신한 뒤 함께 커밋하세요.
+분석이 필요 없는 커밋이면 이 검사만 건너뛰세요: SKIP_PROGRESS_CHECK=1 git commit ...
+EOF
+exit 1
