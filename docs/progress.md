@@ -11,7 +11,7 @@
 | 항목 | 결정 (2026-11-19) | 현재 코드 | 상태 · 할 일 |
 | --- | --- | --- | --- |
 | 껍데기 기술 | **Flutter** (Capacitor에서 변경) | Flutter + `flutter_inappwebview` 6.2.0-beta.3 | ✅ 일치. 브리지는 `addJavaScriptHandler` ↔ `window.flutter_inappwebview.callHandler`로 짠다 |
-| 최소 OS (4번) | iOS 15+ · **Android 7 (API 24)+** | iOS 15.0 · Android `flutter.minSdkVersion`(24) · 아이콘 `min_sdk_android: 24` | ✅ 일치. Flutter 기본값이 바뀌어도 흔들리지 않게 `minSdk = 24`로 못박아 두는 편이 낫다 |
+| 최소 OS (4번) | **iOS 15.4+** (2026-11-20) · **Android 7 (API 24)+** | iOS 15.4 (`IPHONEOS_DEPLOYMENT_TARGET`, 2026-11-20 반영) · Android `flutter.minSdkVersion`(24) · 아이콘 `min_sdk_android: 24` | ✅ 일치. Flutter 기본값이 바뀌어도 흔들리지 않게 `minSdk = 24`로 못박아 두는 편이 낫다 |
 | 기기 범위 (5번) | 계획대로 휴대전화 전용 · 세로 고정 | iOS `TARGETED_DEVICE_FAMILY = "1,2"` (iPad 포함) | ❌ `project.pbxproj`에서 `"1"`로 바꾸고 `UISupportedInterfaceOrientations~ipad`를 지운다 |
 | 아이콘 · 스플래시 (15번) | 계획대로 남보라 `#4C4DDC` 바탕에 흰 고래 (`~/Downloads/icons/`) | `#0a0a0a` 바탕에 노란 고래 `#f7fe57` | ❌ 원본을 `assets/`로 옮기고 `pubspec.yaml`의 두 패키지 설정, `main.dart`의 `splashColor` · `splashLogo` · `splashWhale`, CLAUDE.md · README의 이미지 설명을 같이 바꾼다 |
 | 앱 이름 (3번) | 계획대로 「웨일ERP 직원」 | `WHALEERP` (Android `android:label`, iOS `CFBundleDisplayName`, `MaterialApp.title`) | ❌ 세 곳을 바꾼다 |
@@ -82,3 +82,4 @@
 - 2026-11-19 · `cd68675` · 웹(`whale-erp-new-staff` `4717743`) · api(`f40368ec`) 대조(코드 변경 없음). 웹 저장소 이름, 딥링크 경로(`/join` → `/affiliations`), 파일 받기 방식(계약서는 S3 리다이렉트, 급여 PDF는 쿠키 필요)을 바로잡고, 운영 도메인 DNS 미등록과 실기기 확인 2건(알림톡 딥링크, 서명 패드 새로고침)을 추가
 - 2026-11-20 · `0130205` · PR #1 봇 리뷰 반영(코드 변경 없음). JS 브리지는 허용한 출처의 최상위 프레임에서 온 호출만 받는다는 조건을 계획서와 다음 할 일에 추가. pre-commit 훅이 한글 경로, 이동, progress.md 삭제를 놓치던 문제를 고침
 - 2026-11-20 · `a093a39` · 결정 8 변경 반영(코드 변경 없음). 앱 안에서는 네이티브가 좌표와 조작 여부를 함께 넘기도록 위치 항목과 다음 할 일 3 · 5번을 고침
+- 2026-11-20 · 결정 8 반영 직후 · iOS 최소 버전 15.4 반영. `IPHONEOS_DEPLOYMENT_TARGET` 15.0 → 15.4(바텀시트 `<dialog>`가 15.4부터 동작), 최소 OS 행 갱신

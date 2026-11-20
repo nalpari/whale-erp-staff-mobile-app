@@ -7,7 +7,7 @@
 | --- | --- |
 | 앱 이름 | WHALEERP |
 | 번들 ID / applicationId | `kr.co.whaleerp.staff` |
-| 플랫폼 | Android, iOS (iOS 15.0 이상, Android 최소 버전은 Flutter 기본값) |
+| 플랫폼 | Android, iOS (iOS 15.4 이상, Android 최소 버전은 Flutter 기본값) |
 | 화면 방향 | 세로 고정 |
 | Dart SDK | `^3.13.2` |
 

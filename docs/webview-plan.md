@@ -13,7 +13,7 @@ tags: [whale-erp-staff, 웹뷰, 앱출시, ios, android]
 
 > [!important] 2026-11-19 결정 변경
 > - 껍데기 기술: Capacitor → **Flutter** (`flutter_inappwebview`). 저장소 `nalpari/whale-erp-staff-mobile-app` 이 Flutter 로 만들어져 1단계가 끝난 상태
-> - 최소 지원 Android: 8 (API 26) → **7 (API 24)**. iOS 는 그대로 15+ · 휴대전화 전용
+> - 최소 지원 Android: 8 (API 26) → **7 (API 24)**. iOS 는 15+ · 휴대전화 전용 (2026-11-20 에 15.4+ 로 올림, 아래)
 > - 번들 ID: **보류** (지금 앱은 로컬에서만 `kr.co.whaleerp.staff` 사용, 외부 등록 없음)
 > - 그대로 유지: 아이콘 · 스플래시 시안(15), 앱 이름 「웨일ERP 직원」(3), 운영 URL `staff.whaleerp.co.kr`(6)
 > - 웹뷰 감지 User-Agent: **`WhaleStaffApp/<앱 버전>`** (예 `WhaleStaffApp/1.0`) 로 확정
@@ -27,6 +27,7 @@ tags: [whale-erp-staff, 웹뷰, 앱출시, ios, android]
 >
 > [!important] 2026-11-20 결정 변경
 > - 위치 조작 감지(8): 앱 안에서는 **네이티브가 좌표와 조작 여부를 함께** 웹에 넘긴다 (처음엔 좌표는 웹 geolocation, `isMock` 만 네이티브)
+> - 최소 지원 iOS(4): 15+ → **15.4+**. 바텀시트에 쓰는 `<dialog>`(`src/components/common/bottom-sheet.tsx`)가 15.4 부터 동작
 >
 > 앱 저장소의 `docs/progress.md` 가 이 문서와 코드를 비교해 남은 일을 관리한다.
 
@@ -164,7 +165,7 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 | 1   | 저장소 이름 · 위치                       | `nalpari/whale-erp-staff-app`                                           | **결정** — `nalpari/whale-erp-staff-mobile-app` (2026-11-13 회의) |
 | 2   | **번들 ID / 패키지명** (스토어 등록 후 변경 불가) | `kr.co.<회사도메인>.whaleerp.staff` 형식                                       | **보류** (2026-11-19). **3단계 딥링크 전까지 확정** — 그전엔 임시 ID 로 로컬 진행 (2026-11-17). 앱 저장소는 지금 `kr.co.whaleerp.staff` 를 로컬에서만 쓴다 |
 | 3   | 스토어 표시 앱 이름                       | 짧게(예 「웨일ERP 직원」), 홈 화면 아이콘 아래 잘리지 않게                                    | **결정** — 「웨일ERP 직원」 (2026-11-13 회의)                           |
-| 4   | 최소 지원 OS                          | iOS 15+(위치 조작 감지 API 가 15부터), Android 8(API 26)+                        | **변경** — iOS 15+ · **Android 7(API 24)+** (2026-11-19). 처음 결정은 Android 8(API 26)+ (2026-11-13 회의). Android 위치 조작 감지는 API 31+ `Location.isMock()`, 그 아래는 `isFromMockProvider()` |
+| 4   | 최소 지원 OS                          | iOS 15+(위치 조작 감지 API 가 15부터), Android 8(API 26)+                        | **변경** — **iOS 15.4+** (2026-11-20, 바텀시트 `<dialog>` 가 Safari · WKWebView 15.4 부터 동작) · **Android 7(API 24)+** (2026-11-19). 처음 결정은 iOS 15+ · Android 8(API 26)+ (2026-11-13 회의). Android 위치 조작 감지는 API 31+ `Location.isMock()`, 그 아래는 `isFromMockProvider()` |
 | 5   | 기기 범위 · 화면 방향                     | 휴대전화 전용 · 세로 고정. iPad 지원하면 iPad 스크린샷 · 심사 대응 추가. 폴더블은 Android 에서 그대로 지원 | **결정** — 휴대전화 전용 · 세로 고정 (2026-11-13 회의)                      |
 
 ### B. 기능 설계
