@@ -98,7 +98,7 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-# 정지된 OS 스플래시. 끝나면 lib/main.dart 의 SplashOverlay 가 같은 고래를 띄운 채 둘레에 로딩 링을 돌린다.
+# 정지된 OS 스플래시. 끝나면 lib/main.dart 의 SplashOverlay 가 같은 화면을 첫 페이지가 뜰 때까지 이어서 띄운다.
 # 색이나 이미지를 바꾸면 SplashOverlay 도 같이 바꾸고 `dart run flutter_native_splash:create` 를 다시 돌린다.
 flutter_native_splash:
   color: "#4C4DDC"

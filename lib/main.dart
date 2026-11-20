@@ -16,9 +16,6 @@ const splashColor = primary;
 const splashLogo = AssetImage('assets/splash_logo.png');
 // flutter_native_splash 는 이미지를 4x 로 본다. 720px 이미지 → 180dp.
 const splashLogoSize = 180.0;
-// 고래와 별(묶음 대각선 180dp)을 둘러싸는 로딩 링.
-const splashRingSize = 210.0;
-const splashWhale = Colors.white;
 
 /// 앱 안에서 열 주소인지. 웹 주소와 같은 호스트의 http(s) 와 웹뷰 내부 스킴만 앱에서 연다.
 bool isInApp(Uri uri, Uri base) {
@@ -58,7 +55,6 @@ class _WebScreenState extends State<WebScreen> {
   bool _failed = false;
   bool _loaded = false;
   bool _splashGone = false;
-  bool _webViewAttached = false;
 
   void _markLoaded() {
     if (!_loaded) setState(() => _loaded = true);
@@ -101,12 +97,7 @@ class _WebScreenState extends State<WebScreen> {
                         useShouldOverrideUrlLoading: true,
                       ),
                       pullToRefreshController: _refresh,
-                      onWebViewCreated: (controller) async {
-                        _controller = controller;
-                        // 웹뷰가 화면 합성에 붙는 프레임이 지난 뒤에야 스플래시 링을 띄운다.
-                        await WidgetsBinding.instance.endOfFrame;
-                        if (mounted) setState(() => _webViewAttached = true);
-                      },
+                      onWebViewCreated: (controller) => _controller = controller,
                       shouldOverrideUrlLoading: (controller, action) async {
                         final uri = action.request.url;
                         if (uri == null ||
@@ -150,7 +141,6 @@ class _WebScreenState extends State<WebScreen> {
               if (!_splashGone)
                 SplashOverlay(
                   visible: !_loaded,
-                  showRing: _webViewAttached,
                   onHidden: () => setState(() => _splashGone = true),
                 ),
             ],
@@ -161,17 +151,15 @@ class _WebScreenState extends State<WebScreen> {
   }
 }
 
-/// OS 스플래시가 걷힌 자리에 같은 고래를 멈춘 채 두고 둘레에 로딩 링을 돌리다가, 첫 페이지가 뜨면 페이드 아웃한다.
+/// OS 스플래시가 걷힌 자리에 같은 고래를 멈춘 채 두었다가, 첫 페이지가 뜨면 페이드 아웃한다.
 class SplashOverlay extends StatefulWidget {
   const SplashOverlay({
     super.key,
     required this.visible,
-    required this.showRing,
     required this.onHidden,
   });
 
   final bool visible;
-  final bool showRing;
   final VoidCallback onHidden;
 
   @override
@@ -180,18 +168,14 @@ class SplashOverlay extends StatefulWidget {
 
 class _SplashOverlayState extends State<SplashOverlay> {
   bool _precaching = false;
-  bool _precached = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_precaching) {
       _precaching = true;
-      precacheImage(splashLogo, context).whenComplete(() {
-        WidgetsBinding.instance.allowFirstFrame();
-        // 첫 프레임은 링 없이 OS 스플래시와 똑같이 나가고, 링은 그 뒤로 페이드인한다.
-        if (mounted) setState(() => _precached = true);
-      });
+      precacheImage(splashLogo, context)
+          .whenComplete(WidgetsBinding.instance.allowFirstFrame);
     }
   }
 
@@ -208,36 +192,12 @@ class _SplashOverlayState extends State<SplashOverlay> {
             value: SystemUiOverlayStyle.light,
             child: ColoredBox(
               color: splashColor,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  const Image(
-                    image: splashLogo,
-                    width: splashLogoSize,
-                    height: splashLogoSize,
-                  ),
-                  // 기본 링은 동작 줄이기와 상관없이 계속 돌기 때문에 직접 숨긴다.
-                  // 웹뷰가 화면 합성에 처음 붙을 때 링이 불투명하게 비치거나 잠깐 사라졌다(Android 에뮬레이터).
-                  // 그래서 웹뷰가 붙은 뒤(showRing)에야 트리에 넣고 페이드인한다.
-                  if (_precached &&
-                      widget.showRing &&
-                      !MediaQuery.disableAnimationsOf(context))
-                    TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: 1),
-                      duration: const Duration(milliseconds: 200),
-                      builder: (_, opacity, child) =>
-                          Opacity(opacity: opacity, child: child),
-                      child: SizedBox.square(
-                        dimension: splashRingSize,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color: splashWhale,
-                          backgroundColor: splashWhale.withValues(alpha: 0.15),
-                          semanticsLabel: '불러오는 중',
-                        ),
-                      ),
-                    ),
-                ],
+              child: const Center(
+                child: Image(
+                  image: splashLogo,
+                  width: splashLogoSize,
+                  height: splashLogoSize,
+                ),
               ),
             ),
           ),

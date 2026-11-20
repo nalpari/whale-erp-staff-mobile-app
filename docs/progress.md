@@ -13,7 +13,7 @@
 | 껍데기 기술 | **Flutter** (Capacitor에서 변경) | Flutter + `flutter_inappwebview` 6.2.0-beta.3 | ✅ 일치. 브리지는 `addJavaScriptHandler` ↔ `window.flutter_inappwebview.callHandler`로 짠다 |
 | 최소 OS (4번) | **iOS 15.4+** (2026-11-20) · **Android 7 (API 24)+** | iOS 15.4 (`IPHONEOS_DEPLOYMENT_TARGET`, 2026-11-20 반영) · Android `flutter.minSdkVersion`(24) · 아이콘 `min_sdk_android: 24` | ✅ 일치. Flutter 기본값이 바뀌어도 흔들리지 않게 `minSdk = 24`로 못박아 두는 편이 낫다 |
 | 기기 범위 (5번) | 계획대로 휴대전화 전용 · 세로 고정 | iOS `TARGETED_DEVICE_FAMILY = "1,2"` (iPad 포함) | ❌ `project.pbxproj`에서 `"1"`로 바꾸고 `UISupportedInterfaceOrientations~ipad`를 지운다 |
-| 아이콘 · 스플래시 (15번) | 계획대로 남보라 `#4C4DDC` 바탕에 흰 고래. 2026-11-20 `~/Downloads/icons/candidates/`의 후보 A로 확정 | 후보 A 원본을 `assets/source/`에 넣고 아이콘 · 스플래시 이미지를 다시 만듦. 바탕색 `#4C4DDC`, 로딩 링 흰색 (2026-11-20) | ✅ 일치. 실기기 · 에뮬레이터에서 OS 스플래시 → 앱 스플래시 이어짐은 아직 못 봤다 |
+| 아이콘 · 스플래시 (15번) | 계획대로 남보라 `#4C4DDC` 바탕에 흰 고래. 2026-11-20 `~/Downloads/icons/candidates/`의 후보 A로 확정 | 후보 A 원본을 `assets/source/`에 넣고 아이콘 · 스플래시 이미지를 다시 만듦. 바탕색 `#4C4DDC`. 앱 스플래시의 로딩 링은 뺌 (2026-11-20) | ✅ 일치. 실기기 · 에뮬레이터에서 OS 스플래시 → 앱 스플래시 이어짐은 아직 못 봤다 |
 | 앱 이름 (3번) | 계획대로 「웨일ERP 직원」 | `WHALEERP` (Android `android:label`, iOS `CFBundleDisplayName`, `MaterialApp.title`) | ❌ 세 곳을 바꾼다 |
 | 운영 URL (6번) | 계획대로 `staff.whaleerp.co.kr` | 기본값 dev, 코드 TODO는 "prod 주소 미정" | ❌ TODO를 운영 주소로 고친다. 기본값을 운영으로 바꾸는 건 도메인이 열린 뒤다. 2026-11-19 현재 `staff.whaleerp.co.kr`은 DNS가 잡히지 않는다 |
 | 웹뷰 감지 UA | 계획대로 `WhaleStaffApp/<앱 버전>` (예 `WhaleStaffApp/1.0`) | `WhaleERPStaffApp` (버전 없음) | ❌ 앱 버전을 붙여 바꾼다(버전 읽기에 `package_info_plus` 등). README · CLAUDE.md도 같이. 웹 감지 코드는 아직 없어서 깨질 곳은 없다 |
@@ -84,3 +84,4 @@
 - 2026-11-20 · `a093a39` · 결정 8 변경 반영(코드 변경 없음). 앱 안에서는 네이티브가 좌표와 조작 여부를 함께 넘기도록 위치 항목과 다음 할 일 3 · 5번을 고침
 - 2026-11-20 · 결정 8 반영 직후 · iOS 최소 버전 15.4 반영. `IPHONEOS_DEPLOYMENT_TARGET` 15.0 → 15.4(바텀시트 `<dialog>`가 15.4부터 동작), 최소 OS 행 갱신
 - 2026-11-20 · `ff4faf1` · 아이콘 · 스플래시 교체. `candidates/` 후보 A(`icon-a` · `splash-a` · `fg-solid`)를 `assets/source/`에 넣고, 스플래시 로고(고래 + 별, 대각선 720px)와 적응형 전경을 다시 만듦. 바탕 `#4C4DDC`, 로딩 링 흰색. 노란 고래 원본(`hf_…png`) 삭제. 1절 남은 코드 반영 4건
+- 2026-11-20 · `d4a77c5` · 스플래시 로딩 링 제거(사용자 요청). 앱 스플래시는 첫 페이지가 그려질 때까지 고래만 보이다가 페이드 아웃한다
