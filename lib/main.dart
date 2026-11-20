@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// TODO: prod 주소가 정해지면 기본값을 prod 로 바꾼다. dev 는 --dart-define=WEB_URL=... 로 넘긴다.
+// TODO: 운영 주소는 https://staff.whaleerp.co.kr 이다. 도메인이 열리면(2026-11-19 현재 DNS 미등록) 기본값을 운영으로 바꾼다.
+// 그 전까지 기본값은 dev 이고, 다른 주소는 --dart-define=WEB_URL=... 로 넘긴다.
 const webUrl = String.fromEnvironment(
   'WEB_URL',
   defaultValue: 'https://staff-dev.whaleerp.co.kr',
@@ -12,13 +14,10 @@ const webUrl = String.fromEnvironment(
 const primary = Color(0xFF4C4DDC);
 
 // pubspec.yaml 의 flutter_native_splash 와 같은 값. 바꾸면 양쪽을 같이 바꾼다.
-const splashColor = Color(0xFF0A0A0A);
+const splashColor = primary;
 const splashLogo = AssetImage('assets/splash_logo.png');
 // flutter_native_splash 는 이미지를 4x 로 본다. 720px 이미지 → 180dp.
 const splashLogoSize = 180.0;
-// 고래(대각선 약 180dp)를 둘러싸는 로딩 링.
-const splashRingSize = 210.0;
-const splashWhale = Color(0xFFF7FE57);
 
 /// 앱 안에서 열 주소인지. 웹 주소와 같은 호스트의 http(s) 와 웹뷰 내부 스킴만 앱에서 연다.
 bool isInApp(Uri uri, Uri base) {
@@ -29,20 +28,44 @@ bool isInApp(Uri uri, Uri base) {
       uri.host == base.host;
 }
 
-void main() {
-  // 고래 이미지를 디코딩할 때까지 첫 프레임을 미룬다. OS 스플래시가 걷힐 때 고래가 한 프레임 비지 않게.
+/// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
+String appUserAgent(String version) => 'WhaleStaffApp/$version';
+
+/// 앱 버전을 읽는다. 실패하거나, 2초 안에 끝나지 않거나, 비어 있으면 `unknown`.
+/// main() 은 첫 프레임을 미룬 채 이 값을 기다리므로, 여기서 예외가 새거나 멈추면 앱이 OS 스플래시에서 멈춘다.
+Future<String> readAppVersion(Future<PackageInfo> Function() read) async {
+  try {
+    final version = (await read().timeout(const Duration(seconds: 2))).version;
+    return version.isEmpty ? 'unknown' : version;
+  } catch (e, s) {
+    FlutterError.reportError(FlutterErrorDetails(
+      exception: e,
+      stack: s,
+      library: 'main',
+      context: ErrorDescription('앱 버전을 읽지 못해 User-Agent 에 unknown 을 붙임'),
+    ));
+    return 'unknown';
+  }
+}
+
+Future<void> main() async {
+  // 고래 이미지 디코딩과 앱 버전 읽기가 끝날 때까지 첫 프레임을 미룬다. OS 스플래시가 걷힐 때 고래가 한 프레임 비지 않게.
   WidgetsFlutterBinding.ensureInitialized().deferFirstFrame();
+  final version = await readAppVersion(PackageInfo.fromPlatform);
   runApp(
-    const MaterialApp(
-      title: 'WHALEERP',
+    MaterialApp(
+      title: '웨일ERP 직원',
       debugShowCheckedModeBanner: false,
-      home: WebScreen(),
+      home: WebScreen(userAgent: appUserAgent(version)),
     ),
   );
 }
 
 class WebScreen extends StatefulWidget {
-  const WebScreen({super.key});
+  const WebScreen({super.key, required this.userAgent});
+
+  /// 기본 User-Agent 끝에 붙일 값.
+  final String userAgent;
 
   @override
   State<WebScreen> createState() => _WebScreenState();
@@ -58,7 +81,6 @@ class _WebScreenState extends State<WebScreen> {
   bool _failed = false;
   bool _loaded = false;
   bool _splashGone = false;
-  bool _webViewAttached = false;
 
   void _markLoaded() {
     if (!_loaded) setState(() => _loaded = true);
@@ -97,16 +119,11 @@ class _WebScreenState extends State<WebScreen> {
                     InAppWebView(
                       initialUrlRequest: URLRequest(url: WebUri(webUrl)),
                       initialSettings: InAppWebViewSettings(
-                        applicationNameForUserAgent: 'WhaleERPStaffApp',
+                        applicationNameForUserAgent: widget.userAgent,
                         useShouldOverrideUrlLoading: true,
                       ),
                       pullToRefreshController: _refresh,
-                      onWebViewCreated: (controller) async {
-                        _controller = controller;
-                        // 웹뷰가 화면 합성에 붙는 프레임이 지난 뒤에야 스플래시 링을 띄운다.
-                        await WidgetsBinding.instance.endOfFrame;
-                        if (mounted) setState(() => _webViewAttached = true);
-                      },
+                      onWebViewCreated: (controller) => _controller = controller,
                       shouldOverrideUrlLoading: (controller, action) async {
                         final uri = action.request.url;
                         if (uri == null ||
@@ -150,7 +167,6 @@ class _WebScreenState extends State<WebScreen> {
               if (!_splashGone)
                 SplashOverlay(
                   visible: !_loaded,
-                  showRing: _webViewAttached,
                   onHidden: () => setState(() => _splashGone = true),
                 ),
             ],
@@ -161,17 +177,15 @@ class _WebScreenState extends State<WebScreen> {
   }
 }
 
-/// OS 스플래시가 걷힌 자리에 같은 고래를 멈춘 채 두고 둘레에 로딩 링을 돌리다가, 첫 페이지가 뜨면 페이드 아웃한다.
+/// OS 스플래시가 걷힌 자리에 같은 고래를 멈춘 채 두었다가, 첫 페이지가 뜨면 페이드 아웃한다.
 class SplashOverlay extends StatefulWidget {
   const SplashOverlay({
     super.key,
     required this.visible,
-    required this.showRing,
     required this.onHidden,
   });
 
   final bool visible;
-  final bool showRing;
   final VoidCallback onHidden;
 
   @override
@@ -180,18 +194,14 @@ class SplashOverlay extends StatefulWidget {
 
 class _SplashOverlayState extends State<SplashOverlay> {
   bool _precaching = false;
-  bool _precached = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_precaching) {
       _precaching = true;
-      precacheImage(splashLogo, context).whenComplete(() {
-        WidgetsBinding.instance.allowFirstFrame();
-        // 첫 프레임은 링 없이 OS 스플래시와 똑같이 나가고, 링은 그 뒤로 페이드인한다.
-        if (mounted) setState(() => _precached = true);
-      });
+      precacheImage(splashLogo, context)
+          .whenComplete(WidgetsBinding.instance.allowFirstFrame);
     }
   }
 
@@ -208,36 +218,12 @@ class _SplashOverlayState extends State<SplashOverlay> {
             value: SystemUiOverlayStyle.light,
             child: ColoredBox(
               color: splashColor,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  const Image(
-                    image: splashLogo,
-                    width: splashLogoSize,
-                    height: splashLogoSize,
-                  ),
-                  // 기본 링은 동작 줄이기와 상관없이 계속 돌기 때문에 직접 숨긴다.
-                  // 웹뷰가 화면 합성에 처음 붙을 때 링이 불투명하게 비치거나 잠깐 사라졌다(Android 에뮬레이터).
-                  // 그래서 웹뷰가 붙은 뒤(showRing)에야 트리에 넣고 페이드인한다.
-                  if (_precached &&
-                      widget.showRing &&
-                      !MediaQuery.disableAnimationsOf(context))
-                    TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: 1),
-                      duration: const Duration(milliseconds: 200),
-                      builder: (_, opacity, child) =>
-                          Opacity(opacity: opacity, child: child),
-                      child: SizedBox.square(
-                        dimension: splashRingSize,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color: splashWhale,
-                          backgroundColor: splashWhale.withValues(alpha: 0.15),
-                          semanticsLabel: '불러오는 중',
-                        ),
-                      ),
-                    ),
-                ],
+              child: const Center(
+                child: Image(
+                  image: splashLogo,
+                  width: splashLogoSize,
+                  height: splashLogoSize,
+                ),
               ),
             ),
           ),

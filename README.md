@@ -5,7 +5,7 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 앱 이름 | WHALEERP |
+| 앱 이름 | 웨일ERP 직원 (iPhone 전용, 세로 고정) |
 | 번들 ID / applicationId | `kr.co.whaleerp.staff` |
 | 플랫폼 | Android, iOS (iOS 15.4 이상, Android 최소 버전은 Flutter 기본값) |
 | 화면 방향 | 세로 고정 |
@@ -20,8 +20,8 @@
 - **Android 뒤로가기**: 웹 히스토리가 있으면 뒤로 가고, 없으면 앱을 종료합니다.
 - **당겨서 새로고침**: 웹 화면을 아래로 당기면 다시 불러옵니다.
 - **오류 화면**: 페이지를 불러오지 못하면 "연결할 수 없습니다" 화면과 "다시 시도" 버튼을 보여줍니다.
-- **User-Agent**: 기본 User-Agent 끝에 `WhaleERPStaffApp`을 붙여서, 웹에서 앱 안에서 열렸는지 알 수 있습니다.
-- **스플래시**: 정지된 OS 스플래시(`#0a0a0a` 바탕, 노란 고래)가 끝나면, 같은 화면 위에 고래를 감싸는 로딩 링을 띄웁니다. 첫 페이지가 그려지면 페이드 아웃합니다. 기기의 "동작 줄이기"가 켜져 있으면 링은 표시하지 않습니다.
+- **User-Agent**: 기본 User-Agent 끝에 `WhaleStaffApp/<앱 버전>`(예: `WhaleStaffApp/1.0.0`)을 붙여서, 웹에서 앱 안에서 열렸는지 알 수 있습니다.
+- **스플래시**: 정지된 OS 스플래시(남보라 `#4C4DDC` 바탕, 흰 고래와 별)가 끝나면, 같은 화면을 앱이 이어서 띄웁니다. 로딩 표시 없이 고래만 보이다가, 첫 페이지가 그려지면 페이드 아웃합니다.
 
 ## 실행과 빌드
 
@@ -79,11 +79,11 @@ dart run flutter_native_splash:create
 dart run flutter_launcher_icons
 ```
 
-`assets/`의 이미지는 모두 원본 `hf_20260820_080200_343cd9fa-537d-46c7-b869-1d87f4104b18.png`(2048×2048)에서 고래만 잘라 만들었습니다.
+디자인은 남보라 `#4C4DDC` 바탕에 흰 고래입니다. 원본은 `assets/source/`(후보 A: `icon-a.png`, `splash-a.png`, `fg-solid.png`)에 있고 앱에는 묶이지 않습니다. 아래 파일은 이 원본에서 만들었습니다.
 
 | 파일 | 용도 |
 | --- | --- |
-| `splash_logo.png` | OS 스플래시와 앱 안 스플래시 화면의 고래 (720px) |
+| `splash_logo.png` | OS 스플래시와 앱 안 스플래시 화면의 고래와 별 (720px) |
 | `splash_logo_android12.png` | Android 12 이상 스플래시 아이콘 (1152px 캔버스) |
 | `app_icon.png` | iOS 앱 아이콘, Android 7 이하 아이콘 (1024px, 바탕 채움) |
 | `app_icon_foreground.png` | Android 적응형 아이콘 전경과 테마 아이콘 (1024px, 투명 배경) |
@@ -92,6 +92,6 @@ dart run flutter_launcher_icons
 
 ## 알아둘 점
 
-- **prod 주소**: 아직 정해지지 않았습니다. 정해지면 `lib/main.dart`의 `WEB_URL` 기본값을 prod로 바꿔야 합니다(코드에 TODO가 있습니다).
+- **운영 주소**: `https://staff.whaleerp.co.kr`입니다. 도메인이 열리면 `lib/main.dart`의 `WEB_URL` 기본값을 운영으로 바꿔야 합니다(코드에 TODO가 있습니다).
 - **릴리즈 서명**: Android release 빌드는 아직 debug 키로 서명됩니다(`android/app/build.gradle.kts`).
 - **웹뷰 패키지 버전**: `flutter_inappwebview`는 `6.2.0-beta.3`으로 고정돼 있습니다. 6.1.5 안정판은 이 프로젝트가 쓰는 Android Gradle Plugin 9에서 빌드되지 않기 때문입니다. 6.2.0 안정판이 나오면 바꿀 예정입니다.
