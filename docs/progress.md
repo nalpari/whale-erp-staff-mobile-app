@@ -68,7 +68,7 @@
 1. **1절 코드 반영**: iPhone 전용, 앱 이름, 운영 URL TODO, User-Agent, 아이콘 · 스플래시 교체. 아이콘 교체가 가장 크다(두 단계 스플래시 불변식을 다시 맞춰야 한다)
 2. **1단계 마무리 확인**: 실기기에서 로그인 → 앱 강제 종료 → 재실행 후 로그인 유지(쿠키 flush), 키보드와 Dock, 서명 패드와 당겨서 새로고침 충돌
 3. **위치 권한 (2단계, 최우선)**: Android 권한 + `onGeolocationPermissionsShowPrompt`, iOS 사유 문구. 출퇴근이 핵심 기능이라 이것 없이는 테스트를 못 한다
-4. **JS 브리지 골격**: 앱에 `addJavaScriptHandler`, 웹에 `native-bridge.ts`. 웹은 UA `WhaleStaffApp/`으로 앱 안인지 판별한다
+4. **JS 브리지 골격**: 앱에 `addJavaScriptHandler`, 웹에 `native-bridge.ts`. 웹은 UA `WhaleStaffApp/`으로 앱 안인지 판별한다. 핸들러는 `WEB_URL` 출처의 최상위 프레임에서 온 호출만 받는다(UA는 감지용일 뿐 권한 확인에 쓰지 않는다)
 5. **위치 조작 감지**: 핸들러에서 Android `isMock()`(API 31+, 24~30은 `isFromMockProvider()`) / iOS `isSimulatedBySoftware`를 넘기고, 웹 `check-in-screen.tsx`의 `mocked`를 그 값으로 바꾼다
 6. **파일 받기**: 급여 PDF는 `onDownloadStartRequest`에서 웹뷰 쿠키를 실어 받고, 계약서는 S3 호스트로 가는 이동을 가로채 받는다. 둘 다 저장 후 공유 시트
 7. 3단계 이후(딥링크 · 푸시 · 강제 업데이트)는 번들 ID 확정과 api 팀 협의가 먼저다. 협의 일정을 잡아 둔다
@@ -80,3 +80,4 @@
 - 2026-11-19 · `79140e9` · 첫 분석. 1단계(껍데기 · 외부 링크 · 뒤로 가기 · 오류 화면 · 스플래시) 완료. 계획과 다른 점 8건(1절), 2단계 이후와 웹 연동은 전부 시작 전
 - 2026-11-19 · `0c618ab` · 결정 반영(코드 변경 없음). 기술 Flutter, Android API 24, 번들 ID 보류로 계획서 수정. 아이콘 · 앱 이름 · iOS 휴대전화 전용 · 운영 URL · UA는 계획대로 가기로 해서 코드 반영 5건이 남음
 - 2026-11-19 · `cd68675` · 웹(`whale-erp-new-staff` `4717743`) · api(`f40368ec`) 대조(코드 변경 없음). 웹 저장소 이름, 딥링크 경로(`/join` → `/affiliations`), 파일 받기 방식(계약서는 S3 리다이렉트, 급여 PDF는 쿠키 필요)을 바로잡고, 운영 도메인 DNS 미등록과 실기기 확인 2건(알림톡 딥링크, 서명 패드 새로고침)을 추가
+- 2026-11-20 · `0130205` · PR #1 봇 리뷰 반영(코드 변경 없음). JS 브리지는 허용한 출처의 최상위 프레임에서 온 호출만 받는다는 조건을 계획서와 다음 할 일에 추가. pre-commit 훅이 한글 경로, 이동, progress.md 삭제를 놓치던 문제를 고침

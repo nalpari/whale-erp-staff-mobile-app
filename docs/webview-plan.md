@@ -54,7 +54,7 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 **Capacitor 와 달라지는 점**
 - 웹 ↔ 앱 브리지를 직접 짠다. 앱은 `addJavaScriptHandler`, 웹은 `window.flutter_inappwebview.callHandler(이름, …)` 로 부른다. 웹의 `src/lib/native-bridge.ts` 가 이 호출을 감싼다
 - 공식 플러그인 대신 pub.dev 패키지를 쓴다(안): 푸시 `firebase_messaging`, 공유 `share_plus`, 딥링크 `app_links`. 위치는 웹 geolocation 을 그대로 쓰고 조작 감지만 네이티브 코드로 넘긴다
-- 원격 URL 로드에서 브리지가 붙는지는 문제가 아니다(`flutter_inappwebview` 는 원격 페이지에도 핸들러를 붙인다)
+- 원격 URL 로드에서 브리지가 붙는지는 문제가 아니다(`flutter_inappwebview` 는 원격 페이지에도 핸들러를 붙인다). 오히려 **어떤 페이지에서든 부를 수 있어서 막아야 한다**: 핸들러는 빌드 설정의 직원 웹 HTTPS 출처(`WEB_URL`)의 최상위 프레임에서 온 호출만 처리하고, 출처 · 프레임을 확인할 수 없거나 다르면 거부한다. User-Agent 는 웹이 앱 안인지 감지하는 데만 쓰고 권한 확인에는 쓰지 않는다 (2026-11-20, PR 리뷰 반영)
 - `download` 링크는 여전히 웹뷰가 처리하지 않는다. 앱에서 `onDownloadStartRequest` 로 받거나 웹이 브리지로 넘긴다
 
 #### 이전 결정 — Capacitor (2026-11-13, 2026-11-19 변경됨)
