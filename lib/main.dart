@@ -58,12 +58,14 @@ enum LocationAccess {
 }
 
 /// OS 위치 권한(앱 사용 중)을 확인하고, 허락되지 않았지만 다시 물을 수 있으면(denied) 묻는다.
-/// 허락됐는데 「대략적 위치」면 [askPrecise] 일 때 한 번 더 물어 정확한 위치로 바꿀 기회를 준다
-/// (Android 는 FINE 을 다시 요청하면 「정확한 위치로 변경」 창을 띄운다).
+/// 이미 「대략적 위치」로 허락돼 있으면 [askPrecise] 일 때 한 번 더 물어 정확한 위치로 바꿀 기회를 준다
+/// (Android 는 FINE 을 다시 요청하면 「정확한 위치로 변경」 창을 띄운다). 사용자가 이번 창에서 방금
+/// 대략적 위치를 골랐으면 바로 다시 묻지 않는다. 다시 물을 때 [onAskPrecise] 를 부른다.
 /// Android 는 영구 거부여도 checkPermission 이 denied 를 돌려줘서 requestPermission 까지 가지만,
 /// OS 가 창 없이 바로 거부하고 deniedForever 가 돌아온다.
 /// geolocator(Android)는 권한 창이 중단되면(빈 결과) 결과를 돌려주지 않아 future 가 끝나지 않는다.
-/// 그러면 웹의 위치 요청도 끝나지 않으므로 [timeout] 으로 끊는다. 오류 · 시간 초과는 보고하고 denied.
+/// 그러면 웹의 위치 요청도 끝나지 않으므로 단계마다 [timeout] 으로 끊는다. 첫 확인의 오류 · 시간 초과는
+/// denied, 정확한 위치 재요청의 오류 · 시간 초과는 이미 가진 approximate 로 둔다. 둘 다 오류를 보고한다.
 Future<LocationAccess> ensureLocationAccess({
   Future<LocationPermission> Function() check = Geolocator.checkPermission,
   Future<LocationPermission> Function() request = Geolocator.requestPermission,
@@ -71,12 +73,40 @@ Future<LocationAccess> ensureLocationAccess({
       Geolocator.getLocationAccuracy,
   Future<bool> Function() serviceEnabled = Geolocator.isLocationServiceEnabled,
   bool askPrecise = true,
+  VoidCallback? onAskPrecise,
   Duration timeout = const Duration(seconds: 60),
 }) async {
-  try {
-    Future<LocationAccess> run() async {
+  Future<LocationAccess> guarded(
+    Future<LocationAccess> Function() step,
+    LocationAccess fallback,
+    String context,
+  ) async {
+    try {
+      return await step().timeout(timeout);
+    } catch (e, s) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: e,
+          stack: s,
+          library: 'main',
+          context: ErrorDescription(context),
+        ),
+      );
+      return fallback;
+    }
+  }
+
+  Future<LocationAccess> byAccuracy() async =>
+      await accuracy() == LocationAccuracyStatus.precise
+      ? LocationAccess.precise
+      : LocationAccess.approximate;
+
+  var justAsked = false;
+  final first = await guarded(
+    () async {
       var permission = await check();
       if (permission == LocationPermission.denied) {
+        justAsked = true;
         permission = await request();
       }
       if (permission == LocationPermission.deniedForever) {
@@ -87,30 +117,24 @@ Future<LocationAccess> ensureLocationAccess({
         return LocationAccess.denied;
       }
       if (!await serviceEnabled()) return LocationAccess.serviceDisabled;
-      if (await accuracy() == LocationAccuracyStatus.precise) {
-        return LocationAccess.precise;
-      }
-      if (askPrecise) {
-        await request();
-        if (await accuracy() == LocationAccuracyStatus.precise) {
-          return LocationAccess.precise;
-        }
-      }
-      return LocationAccess.approximate;
-    }
+      return byAccuracy();
+    },
+    LocationAccess.denied,
+    '위치 권한을 확인하지 못해 웹의 위치 요청을 거부함',
+  );
 
-    return await run().timeout(timeout);
-  } catch (e, s) {
-    FlutterError.reportError(
-      FlutterErrorDetails(
-        exception: e,
-        stack: s,
-        library: 'main',
-        context: ErrorDescription('위치 권한을 확인하지 못해 웹의 위치 요청을 거부함'),
-      ),
-    );
-    return LocationAccess.denied;
+  if (first != LocationAccess.approximate || !askPrecise || justAsked) {
+    return first;
   }
+  onAskPrecise?.call();
+  return guarded(
+    () async {
+      await request();
+      return byAccuracy();
+    },
+    LocationAccess.approximate,
+    '정확한 위치를 다시 요청하지 못해 대략적 위치로 둠',
+  );
 }
 
 /// 위치 상태에 맞춰 사용자에게 띄울 안내. 안내할 것이 없으면 null.
@@ -204,24 +228,31 @@ class _WebScreenState extends State<WebScreen> {
   bool _askedPrecise = false;
 
   Future<bool> _ensureLocationPermission() async {
-    final pending = _locationAccess ??= ensureLocationAccess(
+    final existing = _locationAccess;
+    if (existing != null) return (await existing).allowsWeb;
+    // 이 요청이 확인을 시작한 쪽이다. 같이 기다린 요청은 안내를 다시 띄우지 않는다.
+    final pending = _locationAccess = ensureLocationAccess(
       askPrecise: !_askedPrecise,
+      onAskPrecise: () => _askedPrecise = true,
     ).whenComplete(() => _locationAccess = null);
     final access = await pending;
-    if (access == LocationAccess.approximate) _askedPrecise = true;
     if (mounted) _showLocationGuide(access);
     return access.allowsWeb;
   }
 
   void _showLocationGuide(LocationAccess access) {
     final guide = locationGuide(access);
-    if (guide == null) return;
+    // 첫 페이지가 그려지기 전이면 스플래시 위에 뜨므로 띄우지 않는다.
+    if (guide == null || !_loaded) return;
     ScaffoldMessenger.of(context)
       ..removeCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: Text(guide.message),
           duration: const Duration(seconds: 6),
+          // action 이 있으면 SnackBar 는 기본으로 사라지지 않고 하단 Dock 을 가린다. 시간이 지나면 닫는다.
+          persist: false,
+          showCloseIcon: true,
           action: SnackBarAction(
             label: guide.action,
             onPressed: guide.appSettings

@@ -110,6 +110,8 @@ void main() {
         await ensureLocationAccess(
           check: returns(LocationPermission.denied),
           request: returns(LocationPermission.denied),
+          accuracy: () => fail('정확도를 보지 않아야 한다'),
+          serviceEnabled: () => fail('위치 서비스를 보지 않아야 한다'),
         ),
         LocationAccess.denied,
       );
@@ -153,8 +155,9 @@ void main() {
       );
     });
 
-    test('대략적 위치면 한 번 더 묻고, 정확한 위치로 바꾸면 precise', () async {
+    test('이미 대략적 위치면 한 번 더 묻고, 정확한 위치로 바꾸면 precise', () async {
       var asked = 0;
+      var notified = 0;
       var status = LocationAccuracyStatus.reduced;
       expect(
         await ensureLocationAccess(
@@ -166,10 +169,12 @@ void main() {
           },
           accuracy: () async => status,
           serviceEnabled: on,
+          onAskPrecise: () => notified++,
         ),
         LocationAccess.precise,
       );
       expect(asked, 1);
+      expect(notified, 1);
     });
 
     test('대략적 위치를 유지하면 approximate, askPrecise 가 꺼져 있으면 묻지 않는다', () async {
@@ -190,9 +195,42 @@ void main() {
           accuracy: reduced,
           serviceEnabled: on,
           askPrecise: false,
+          onAskPrecise: () => fail('묻지 않아야 한다'),
         ),
         LocationAccess.approximate,
       );
+    });
+
+    test('방금 창에서 대략적 위치를 골랐으면 바로 다시 묻지 않는다', () async {
+      var asked = 0;
+      expect(
+        await ensureLocationAccess(
+          check: returns(LocationPermission.denied),
+          request: () async {
+            asked++;
+            return LocationPermission.whileInUse;
+          },
+          accuracy: returns(LocationAccuracyStatus.reduced),
+          serviceEnabled: on,
+          onAskPrecise: () => fail('다시 묻지 않아야 한다'),
+        ),
+        LocationAccess.approximate,
+      );
+      expect(asked, 1);
+    });
+
+    testWidgets('정확한 위치 재요청이 끝나지 않으면 시간 초과 뒤 approximate 로 둔다', (tester) async {
+      LocationAccess? access;
+      ensureLocationAccess(
+        check: returns(LocationPermission.whileInUse),
+        request: () => Completer<LocationPermission>().future,
+        accuracy: returns(LocationAccuracyStatus.reduced),
+        serviceEnabled: on,
+        timeout: const Duration(seconds: 60),
+      ).then((v) => access = v);
+      await tester.pump(const Duration(seconds: 60));
+      expect(access, LocationAccess.approximate);
+      expect(tester.takeException(), isA<TimeoutException>());
     });
 
     testWidgets('권한 확인이 실패하면 denied 를 돌려주고 오류를 보고한다', (tester) async {
