@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:staff/main.dart';
@@ -44,6 +46,17 @@ void main() {
         await readAppVersion(() async => throw Exception('채널 오류')),
         'unknown',
       );
+    });
+
+    testWidgets('응답이 없으면 2초 뒤 unknown 을 돌려주고 오류를 보고한다', (tester) async {
+      String? version;
+      readAppVersion(() => Completer<PackageInfo>().future)
+          .then((v) => version = v);
+      await tester.pump(const Duration(milliseconds: 1999));
+      expect(version, isNull);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(version, 'unknown');
+      expect(tester.takeException(), isA<TimeoutException>());
     });
   });
 }

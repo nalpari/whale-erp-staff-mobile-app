@@ -31,7 +31,7 @@ bool isInApp(Uri uri, Uri base) {
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
 String appUserAgent(String version) => 'WhaleStaffApp/$version';
 
-/// 앱 버전을 읽는다. 실패하거나 비어 있으면 `unknown`.
+/// 앱 버전을 읽는다. 실패하거나, 2초 안에 끝나지 않거나, 비어 있으면 `unknown`.
 /// main() 은 첫 프레임을 미룬 채 이 값을 기다리므로, 여기서 예외가 새거나 멈추면 앱이 OS 스플래시에서 멈춘다.
 Future<String> readAppVersion(Future<PackageInfo> Function() read) async {
   try {
@@ -49,7 +49,7 @@ Future<String> readAppVersion(Future<PackageInfo> Function() read) async {
 }
 
 Future<void> main() async {
-  // 고래 이미지를 디코딩할 때까지 첫 프레임을 미룬다. OS 스플래시가 걷힐 때 고래가 한 프레임 비지 않게.
+  // 고래 이미지 디코딩과 앱 버전 읽기가 끝날 때까지 첫 프레임을 미룬다. OS 스플래시가 걷힐 때 고래가 한 프레임 비지 않게.
   WidgetsFlutterBinding.ensureInitialized().deferFirstFrame();
   final version = await readAppVersion(PackageInfo.fromPlatform);
   runApp(
