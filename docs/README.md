@@ -15,10 +15,21 @@
 2. "다음에 할 일" 순서를 다시 매긴다.
 3. 맨 아래 "분석 기록"에 한 줄을 추가한다.
 
-`.githooks/pre-commit`이 이 규칙을 검사한다. 앱 코드가 스테이징됐는데 `docs/progress.md`가 없으면 커밋을 막는다. 클론이나 워크트리를 새로 만들면 한 번 켜 준다.
+`.githooks/pre-commit`이 이 규칙을 검사한다. 앱 코드가 스테이징됐는데 `docs/progress.md`가 없으면 커밋을 막는다. 클론할 때 한 번 켜 준다. 설정은 그 클론의 모든 워크트리가 같이 쓴다.
+
+먼저 쓰고 있는 훅이 있는지 확인한다. `core.hooksPath`는 훅을 추가하는 게 아니라 git이 훅을 찾는 폴더를 바꾸는 설정이라, 그대로 켜면 기존 훅(비밀정보 검사 등)이 돌지 않는다.
+
+```bash
+git config --get core.hooksPath     # 이미 다른 폴더를 쓰고 있는지
+ls "$(git rev-parse --git-common-dir)/hooks" | grep -v '\.sample$'   # 기본 폴더에 직접 넣은 훅이 있는지
+```
+
+둘 다 비어 있으면 켠다.
 
 ```bash
 git config core.hooksPath .githooks
 ```
+
+기존 훅이 있으면 경로를 덮어쓰지 말고, 기존 `pre-commit` 안에서 `.githooks/pre-commit`을 불러 연결한다(예: 기존 훅 끝에 `"$(git rev-parse --show-toplevel)/.githooks/pre-commit" || exit 1`).
 
 분석이 필요 없는 커밋(오타, 주석만 고친 경우)은 `git commit --no-verify`로 건너뛴다.

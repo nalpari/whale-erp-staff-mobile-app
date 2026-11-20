@@ -26,7 +26,7 @@ Local Android tooling on this machine: SDK at `/opt/homebrew/share/android-comma
 
 ## Worktrees and branches
 
-Create worktrees with Orca, not Claude Code's `EnterWorktree` (that one lands in `.claude/worktrees/`, which Orca does not register, so it shows up as a folder inside `main`). Follow the same naming as the other WHALEERP repos (`whale-erp-api`, `whale-erp-new-front`, `whale-erp-new-staff`): one lowercase English Pokémon name, with no `chang-su98/` prefix, used for both the worktree and the branch (`togepi`, `gengar`). Orca's default prefixes the git username and picks a random word (for example `chang-su98/pacu`), so always pass `--branch`:
+Create worktrees with Orca, not Claude Code's `EnterWorktree` (that one lands in `.claude/worktrees/`, which Orca does not register, so it shows up as a folder inside `main`). Follow the same naming as the other WHALEERP repos (`whale-erp-api`, `whale-erp-new-front`, `whale-erp-new-staff`): one lowercase English Pokémon name, with no `chang-su98/` prefix, used for both the worktree and the branch (`togepi`, `gengar`). Orca's default prefixes the git username and picks a random word (for example `chang-su98/pacu`), so always pass `--branch`. The `--repo` path below is this machine's main checkout; on another machine use that clone's path (`git rev-parse --show-toplevel` from the main checkout):
 
 ```bash
 orca worktree create --repo path:/Users/kcs/workspace/WHALEERP/whale-erp-staff-mobile-app --name <pokemon> --branch <pokemon> --no-parent --json
@@ -38,7 +38,7 @@ Pick a name that is not already a branch here (`git branch -a`). Ticket-scoped b
 
 `docs/webview-plan.md` is the plan, a copy of the user's Obsidian note `ObsidianNew/whale-erp-staff/앱-출시/웹뷰-앱-제작-할일.md` (vault `/Users/kcs/김창수/obsidian`) without the developer-account link. Flutter replaced the original Capacitor choice on 2026-11-19. `docs/progress.md` compares that plan against the code and lists what to do next.
 
-Any commit that touches `lib/`, `android/`, `ios/`, `assets/` or `pubspec.yaml` must include an updated `docs/progress.md`: re-check the changed items against the plan, update the status tables and the "다음에 할 일" order, and append one line to "분석 기록" (`date · HEAD at analysis time · summary`). When splitting work into several commits, update it in each app-code commit. `.githooks/pre-commit` enforces this; enable it per clone with `git config core.hooksPath .githooks`. Do not bypass it with `--no-verify` unless the user asks.
+Any commit that touches `lib/`, `android/`, `ios/`, `assets/` or `pubspec.yaml` must include an updated `docs/progress.md`: re-check the changed items against the plan, update the status tables and the "다음에 할 일" order, and append one line to "분석 기록" (`date · HEAD at analysis time · summary`). When splitting work into several commits, update it in each app-code commit. `.githooks/pre-commit` enforces this; enable it per clone with `git config core.hooksPath .githooks` (it replaces the hooks directory, so check for existing hooks first; see `docs/README.md`). Do not bypass it with `--no-verify` unless the user asks.
 
 If a plan decision changes (tech, icon, name, bundle ID), edit the Obsidian note first, note the date, then re-copy it to `docs/webview-plan.md` (drop the `관련: [[개발자-계정-등록-...]]` line) so the two do not drift.
 
