@@ -25,6 +25,9 @@ tags: [whale-erp-staff, 웹뷰, 앱출시, ios, android]
 > - 운영 도메인 `staff.whaleerp.co.kr` 은 아직 DNS 가 잡히지 않음. 앱 기본 URL 은 도메인이 열린 뒤 운영으로 바꾼다
 > - 실기기 확인 추가: 알림톡 버튼(카카오톡 인앱 브라우저)에서 App Links · Universal Links 동작, 서명 패드와 네이티브 당겨서 새로고침 충돌
 >
+> [!important] 2026-11-20 결정 변경
+> - 위치 조작 감지(8): 앱 안에서는 **네이티브가 좌표와 조작 여부를 함께** 웹에 넘긴다 (처음엔 좌표는 웹 geolocation, `isMock` 만 네이티브)
+>
 > 앱 저장소의 `docs/progress.md` 가 이 문서와 코드를 비교해 남은 일을 관리한다.
 
 ---
@@ -53,7 +56,7 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 
 **Capacitor 와 달라지는 점**
 - 웹 ↔ 앱 브리지를 직접 짠다. 앱은 `addJavaScriptHandler`, 웹은 `window.flutter_inappwebview.callHandler(이름, …)` 로 부른다. 웹의 `src/lib/native-bridge.ts` 가 이 호출을 감싼다
-- 공식 플러그인 대신 pub.dev 패키지를 쓴다(안): 푸시 `firebase_messaging`, 공유 `share_plus`, 딥링크 `app_links`. 위치는 웹 geolocation 을 그대로 쓰고 조작 감지만 네이티브 코드로 넘긴다
+- 공식 플러그인 대신 pub.dev 패키지를 쓴다(안): 푸시 `firebase_messaging`, 공유 `share_plus`, 딥링크 `app_links`. 위치는 앱 안에서 네이티브가 좌표와 조작 여부를 함께 재서 넘긴다(결정 8, 2026-11-20 변경. 처음엔 웹 geolocation + 조작 감지만 네이티브). 패키지는 `geolocator`(안)
 - 원격 URL 로드에서 브리지가 붙는지는 문제가 아니다(`flutter_inappwebview` 는 원격 페이지에도 핸들러를 붙인다). 오히려 **어떤 페이지에서든 부를 수 있어서 막아야 한다**: 핸들러는 빌드 설정의 직원 웹 HTTPS 출처(`WEB_URL`)의 최상위 프레임에서 온 호출만 처리하고, 출처 · 프레임을 확인할 수 없거나 다르면 거부한다. User-Agent 는 웹이 앱 안인지 감지하는 데만 쓰고 권한 확인에는 쓰지 않는다 (2026-11-20, PR 리뷰 반영)
 - `download` 링크는 여전히 웹뷰가 처리하지 않는다. 앱에서 `onDownloadStartRequest` 로 받거나 웹이 브리지로 넘긴다
 
@@ -91,13 +94,13 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 - [ ] **파일 받기** — 두 경로가 방식이 다르다 (2026-11-19 확인) → 네이티브가 저장 · 공유 시트
   - 급여 PDF: `pay/_components/export-button.tsx` 의 `download` 링크 → `pay/[payslipId]/pdf/route.ts` 가 같은 호스트에서 `application/pdf` attachment 로 내려준다. 앱이 `onDownloadStartRequest` 로 받되, 로그인이 httpOnly 쿠키라 **웹뷰 쿠키를 실어** 받아야 한다. 실패하면 이 라우트는 평문 글자를 돌려줘 앱 화면을 덮을 수 있다 → 계약서처럼 상세로 돌려보내게 바꾸는 것을 검토
   - 계약서 파일: `download` 링크가 아니다. `contracts/[contractId]/documents/[contractDocumentId]/route.ts` 가 S3 서명 주소(300초, attachment)로 **302 리다이렉트**한다. 다른 호스트라 지금 앱은 외부 브라우저로 내보낸다 → 앱에서 S3 주소 이동을 다운로드로 받는다
-- [ ] **위치 조작 감지** — `check-in-screen.tsx` 가 `mocked: false` 로 고정이다. 웹에선 알 수 없어 네이티브가 넘겨야 한다(Android `Location.isMock()`, iOS 15+ `sourceInformation.isSimulatedBySoftware`). 그래야 `MOCK_LOCATION` 확인 필요 사유가 실제로 쌓인다
+- [ ] **위치 조작 감지** — `check-in-screen.tsx` 가 `mocked: false` 로 고정이다. 웹에선 알 수 없어 네이티브가 넘겨야 한다(Android `Location.isMock()`, iOS 15+ `sourceInformation.isSimulatedBySoftware`). 그래야 `MOCK_LOCATION` 확인 필요 사유가 실제로 쌓인다. 앱 안에서는 좌표도 네이티브 측정값을 함께 받아 `navigator.geolocation` 을 부르지 않는다(결정 8, 2026-11-20)
 - [ ] **기기 식별자** — `getDeviceId()`(`src/lib/session.ts`)는 쿠키에 굽는 UUID 라 앱을 지우면 바뀐다. 네이티브 ID 를 받아 쓰는 쪽이 낫다
 - [x] **오프라인 · 오류 화면** — 원격 URL 이 안 열릴 때 네이티브 쪽 다시 시도 화면 (앱에서 처리, 2026-11-19)
 
 ## 2. 네이티브 껍데기에서 할 일
 
-- [ ] **위치 권한** — iOS `NSLocationWhenInUseUsageDescription`, Android 런타임 권한 + `onGeolocationPermissionsShowPrompt`. 웹 · OS 권한이 두 번 뜨지 않게
+- [ ] **위치 권한** — iOS `NSLocationWhenInUseUsageDescription`, Android 런타임 권한. 앱 안에서는 네이티브가 위치를 재므로(결정 8) 웹 geolocation 권한 창은 뜨지 않아야 한다. 웹이 실수로 geolocation 을 부를 때를 대비해 Android `onGeolocationPermissionsShowPrompt` 처리는 남겨 두되, 웹 · OS 권한이 두 번 뜨지 않게
 - [ ] **푸시(FCM · APNs)** — 앱 푸시 템플릿 5종(`PUSH_CONTRACT_SENT` 등)과 수신 설정 묶음은 정의돼 있지만 받는 쪽이 없다. 토큰 발급 → api 등록 → 알림 누르면 해당 화면. **토큰 등록 API 는 api 팀과 정해야 한다** (api 이슈 #261 · #321, 2026-11-19 현재 발송 대기 행만 쌓는다)
 - [ ] **딥링크(App Links · Universal Links)** — api(`src/auth/staff-app-url.ts`)가 `STAFF_APP_URL` 의 origin 으로 만드는 링크 세 가지: 알림톡 가입 초대(`TALK_STAFF_INVITATION`, `/invite#token=…`), 비밀번호 재설정(`/password-reset/link#token=…`), 소속 추가 확인 요청(`/affiliations`, 토큰 없음). 도메인에 `assetlinks.json` · `apple-app-site-association` 을 올리고, `#` 뒤 토큰이 앱으로 넘어오는지 확인. 알림톡 버튼은 카카오톡 인앱 브라우저로 열릴 수 있어 앱이 뜨는지 실기기로 확인 (2026-11-19)
 - [ ] **쿠키 유지** — 자동 로그인 켜면 마지막 사용 후 30일, 끄면 7일(`src/lib/session-cookies.ts`). Android `CookieManager.flush()`, WKWebView 쿠키 저장소 유지
@@ -170,7 +173,7 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 |---|---|---|---|
 | 6 | 환경별 URL | 개발 · 스테이징 · 운영 도메인 3개를 빌드 설정으로 나눈다(실제 도메인 확인 필요) | **결정** — 개발 `staff-dev.whaleerp.co.kr` · 운영 `staff.whaleerp.co.kr`, **스테이징 없음** (2026-11-13 회의) |
 | 7 | 딥링크 경로 | `/invite` · `/affiliations` · `/password-reset/link` 를 앱에서 연다(2026-11-19 수정: 처음엔 `/join` 이었으나 밖에서 들어오는 링크가 아니라 빼고, api 가 보내는 `/affiliations` 를 넣음). 앱이 없으면 웹으로. 도메인에 `assetlinks.json` · `apple-app-site-association` | **결정** — 추천대로 (2026-11-13 회의) |
-| 8 | 위치 조작 감지 | 위치는 웹 geolocation 그대로, 조작 감지 결과(`isMock`)만 네이티브가 넘긴다. 커스텀 플러그인 1개, `check-in-screen.tsx` 의 `mocked` 를 브리지 값으로 | **결정** — 추천대로 (2026-11-13 회의). Flutter 라 커스텀 플러그인 대신 JS 핸들러 1개 (2026-11-19) |
+| 8 | 위치 조작 감지 | 앱 안에서는 **네이티브가 좌표와 조작 여부(`isMock`)를 한 번에 측정해 함께 넘긴다**. 웹은 앱 안이면 `navigator.geolocation` 대신 브리지 값을 쓰고, 앱 밖(브라우저)에서는 지금처럼 geolocation + `mocked: false`. JS 핸들러 1개, `check-in-screen.tsx` 의 좌표 · `mocked` 를 브리지 값으로 | **변경** (2026-11-20) — 좌표 · 조작 여부를 네이티브가 함께 넘긴다. 조작 여부가 웹이 따로 받은 좌표가 아니라 같은 측정값에 대한 것이어야 판정이 맞다. 처음 결정은 「위치는 웹 geolocation, `isMock` 만 네이티브」(2026-11-13 회의) |
 | 9 | 기기 식별자 | 앱 안에서는 네이티브 ID 를 넘겨 `getDeviceId()` 대신 쓴다. 웹은 지금처럼 쿠키 UUID | **결정** — 추천대로 (2026-11-13 회의) |
 | 10 | 파일 받기 | 공유 시트로 연다(저장 · 카톡 전송을 사용자가 고름). 급여 PDF · 계약서 링크를 앱 안에선 브리지로. 계약서는 S3 서명 주소로 리다이렉트되고 급여 PDF 는 쿠키가 필요하다(위 1절, 2026-11-19) | **결정** — 추천대로 (2026-11-13 회의) |
 | 11 | 푸시 | FCM 프로젝트는 회사 Google 계정으로. 토큰 등록 API 를 api 팀과 협의 · 일정 | **결정** — 추천대로 (토큰 등록 API 는 api 팀 협의) (2026-11-13 회의) |
