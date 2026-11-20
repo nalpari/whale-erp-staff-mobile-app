@@ -4,6 +4,8 @@
 	<dict>
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>출퇴근을 기록할 때 근무지 근처에 있는지 확인하려고 현재 위치를 사용합니다.</string>
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>

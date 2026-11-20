@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission
         android:name="android.permission.INTERNET"/>
+    <!-- 출퇴근 위치 확인. Android 12+ 는 정확한 위치를 받으려면 두 권한을 함께 선언해야 한다 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="웨일ERP 직원"
         android:name="${applicationName}"
