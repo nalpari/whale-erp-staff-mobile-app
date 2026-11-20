@@ -15,7 +15,7 @@ tags: [whale-erp-staff, 웹뷰, 앱출시, ios, android]
 > - 껍데기 기술: Capacitor → **Flutter** (`flutter_inappwebview`). 저장소 `nalpari/whale-erp-staff-mobile-app` 이 Flutter 로 만들어져 1단계가 끝난 상태
 > - 최소 지원 Android: 8 (API 26) → **7 (API 24)**. iOS 는 15+ · 휴대전화 전용 (2026-11-20 에 15.4+ 로 올림, 아래)
 > - 번들 ID: **보류** (지금 앱은 로컬에서만 `kr.co.whaleerp.staff` 사용, 외부 등록 없음)
-> - 그대로 유지: 아이콘 · 스플래시 시안(15), 앱 이름 「웨일ERP 직원」(3), 운영 URL `staff.whaleerp.co.kr`(6)
+> - 그대로 유지: 아이콘 · 스플래시 시안(15, 2026-11-20 후보 A로 확정), 앱 이름 「웨일ERP 직원」(3), 운영 URL `staff.whaleerp.co.kr`(6)
 > - 웹뷰 감지 User-Agent: **`WhaleStaffApp/<앱 버전>`** (예 `WhaleStaffApp/1.0`) 로 확정
 >
 > [!check] 2026-11-19 웹 · api 대조 (웹 `whale-erp-new-staff` `4717743`, api `whale-erp-api` `f40368ec`)
@@ -134,22 +134,20 @@ Flutter 로 만든 앱 저장소(`whale-erp-staff-mobile-app`)에서 1단계(원
 > | 1 · 2 | 필요 없음 (실기기는 개인 무료 서명으로 가능) |
 > | 3 딥링크 · 4 푸시 · 5 내부 테스트 | 필요 |
 
-## 아이콘 · 스플래시 — 확정 (2026-11-13, 2026-11-19 재확인)
+## 아이콘 · 스플래시 — 확정 (2026-11-13, 2026-11-19 재확인, 2026-11-20 후보 A로 변경)
 
-> 앱 저장소에는 아직 다른 시안(`#0a0a0a` 바탕에 노란 고래)이 들어가 있다. 이 시안으로 바꿔야 한다 (2026-11-19).
+> 2026-11-20: 평면 버전 대신 `candidates/`의 **후보 A**를 결과물로 쓰기로 바꿨다. 앱 저장소에 반영했다(`assets/source/`에 원본).
 
 남보라(#4C4DDC) 바탕에 흰 고래. 스플래시는 고래 위에 별 세 개.
 
-| 파일 (`~/Downloads/icons/`) | 크기 | 쓰는 곳 |
+| 파일 (`~/Downloads/icons/candidates/`) | 크기 | 쓰는 곳 |
 |---|---|---|
-| `app-icon-1024.png` | 1024 · 알파 없음 | iOS 앱 아이콘 · App Store 제출용 |
-| `android-foreground-white.png` | 1024 · 투명 | Android 적응형 아이콘 앞면 |
-| `android-background-4C4DDC.png` | 1024 | Android 적응형 아이콘 뒷면 |
-| `android-monochrome-black.png` | 1024 · 투명 | Android 13+ 테마 아이콘 |
-| `splash-1290x2796.png` | 1290×2796 | 스플래시 |
+| `icon-a.png` | 1024 · 알파 없음 | iOS 앱 아이콘 · App Store 제출용, Android 7 이하 아이콘 |
+| `fg-solid.png` | 1024 · 투명 | Android 적응형 아이콘 앞면 · Android 13+ 테마 아이콘 (뒷면은 #4C4DDC 단색) |
+| `splash-a.png` | 1296×2800 | 스플래시 (고래와 별만 잘라 가운데에 두고 바탕은 #4C4DDC 단색) |
 
-- 후보안은 `candidates/`(icon-a · b, splash-a · b, fg-solid · transparent)에 있고 `~/Documents/candidates` 는 같은 사본이다. 최종본은 위 표의 평면 버전이다
-- 원본을 앱 저장소 `assets/` 에 넣고 `flutter_launcher_icons`(아이콘) · `flutter_native_splash`(스플래시) 로 플랫폼별 크기를 뽑는다. 앱 안 스플래시(`SplashOverlay`)의 색 · 이미지도 같이 바꾼다
+- 같은 폴더의 icon-b · splash-b · fg-transparent 는 쓰지 않는다. `~/Downloads/icons/` 바로 아래 평면 버전(`app-icon-1024.png` 등)도 쓰지 않는다. `~/Documents/candidates` 는 같은 사본이다
+- 원본을 앱 저장소 `assets/source/` 에 넣고 `flutter_launcher_icons`(아이콘) · `flutter_native_splash`(스플래시) 로 플랫폼별 크기를 뽑는다. 앱 안 스플래시(`SplashOverlay`)의 색 · 이미지도 같이 바꾼다
 - Android 12+ 는 시스템 스플래시 API 라 전체 이미지 대신 **가운데 아이콘 + 바탕색**으로 나온다. 바탕 #4C4DDC + 흰 고래 아이콘으로 맞추면 iOS 와 같은 인상이 된다
 
 ## 결정 사항 — 회의에서 정할 것
