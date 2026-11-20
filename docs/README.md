@@ -30,6 +30,15 @@ ls "$(git rev-parse --git-common-dir)/hooks" 2>/dev/null | grep -v '\.sample$'  
 git config core.hooksPath .githooks
 ```
 
-기존 훅이 있으면 경로를 덮어쓰지 말고, 기존 `pre-commit` 안에서 `.githooks/pre-commit`을 불러 연결한다(예: 기존 훅 끝에 `"$(git rev-parse --show-toplevel)/.githooks/pre-commit" || exit 1`).
+기존 훅이 있으면 경로를 덮어쓰지 말고, 지금 쓰는 훅 폴더의 `pre-commit`에서 `.githooks/pre-commit`을 불러 연결한다.
 
-분석이 필요 없는 커밋(오타, 주석만 고친 경우)은 `git commit --no-verify`로 건너뛴다.
+- `pre-commit`이 이미 있으면: 그 파일 끝에 `"$(git rev-parse --show-toplevel)/.githooks/pre-commit" || exit 1`을 넣는다.
+- `pre-commit`이 없으면(예: `commit-msg`만 있음): 같은 폴더에 `pre-commit`을 새로 만들어 위 한 줄을 넣고 실행 권한을 준다(`chmod +x`).
+
+분석이 필요 없는 커밋(오타, 주석만 고친 경우)은 이 검사만 건너뛴다.
+
+```bash
+SKIP_PROGRESS_CHECK=1 git commit ...
+```
+
+`git commit --no-verify`는 쓰지 않는다. 이 검사뿐 아니라 다른 훅(비밀정보 검사 등)까지 모두 건너뛴다.
