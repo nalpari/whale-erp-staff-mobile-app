@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -26,6 +27,23 @@ bool isInApp(Uri uri, Uri base) {
   }
   return (uri.scheme == 'http' || uri.scheme == 'https') &&
       uri.host == base.host;
+}
+
+/// 웹이 위치를 물어도 되는 출처인지. 웹 주소와 같은 호스트의 https 만 허락한다.
+bool isTrustedOrigin(String origin, Uri base) {
+  final uri = Uri.tryParse(origin);
+  return uri != null && uri.scheme == 'https' && uri.host == base.host;
+}
+
+/// OS 위치 권한(앱 사용 중)을 확인하고, 아직 정하지 않았으면 한 번 묻는다.
+/// 영구 거부면 다시 묻지 않고 false. 이때 웹은 위치 「거부」로 받는다.
+Future<bool> ensureLocationPermission() async {
+  var permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+    permission = await Geolocator.requestPermission();
+  }
+  return permission == LocationPermission.whileInUse ||
+      permission == LocationPermission.always;
 }
 
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
@@ -124,6 +142,21 @@ class _WebScreenState extends State<WebScreen> {
                       ),
                       pullToRefreshController: _refresh,
                       onWebViewCreated: (controller) => _controller = controller,
+                      // Android: 웹이 navigator.geolocation 을 부르면 여기로 온다. 웹뷰는 자체 확인 창이 없어서
+                      // OS 권한 창 한 번만 뜬다. 앱 안의 출퇴근 위치는 나중에 네이티브가 직접 잰다(계획 결정 8).
+                      // 이 처리는 웹이 geolocation 을 부를 때를 대비한 것이다. retain 을 끄면 매번 OS 권한을 다시 확인한다.
+                      // iOS 는 WKWebView 가 Info.plist 사유 문구로 OS 권한을 직접 묻는다.
+                      onGeolocationPermissionsShowPrompt:
+                          (controller, origin) async {
+                            final allow =
+                                isTrustedOrigin(origin, _base) &&
+                                await ensureLocationPermission();
+                            return GeolocationPermissionShowPromptResponse(
+                              origin: origin,
+                              allow: allow,
+                              retain: false,
+                            );
+                          },
                       shouldOverrideUrlLoading: (controller, action) async {
                         final uri = action.request.url;
                         if (uri == null ||
@@ -200,8 +233,10 @@ class _SplashOverlayState extends State<SplashOverlay> {
     super.didChangeDependencies();
     if (!_precaching) {
       _precaching = true;
-      precacheImage(splashLogo, context)
-          .whenComplete(WidgetsBinding.instance.allowFirstFrame);
+      precacheImage(
+        splashLogo,
+        context,
+      ).whenComplete(WidgetsBinding.instance.allowFirstFrame);
     }
   }
 

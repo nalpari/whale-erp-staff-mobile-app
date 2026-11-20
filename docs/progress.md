@@ -31,7 +31,7 @@
 | 오프라인 · 오류 화면 | ✅ | `_ErrorView` + 다시 시도 |
 | 스플래시 · 아이콘 · 상태바 | 🟡 | 확정 시안(후보 A)으로 이미지 교체 완료. 남은 일: 에뮬레이터 · 실기기에서 두 단계 스플래시 이어짐과 남보라 위 흰 상태바 아이콘(`SystemUiOverlayStyle.light`)이 잘 보이는지 확인 |
 | 키보드 | 🟡 | `adjustResize`는 있다. 하단 sticky Dock이 가리는지 실기기 확인이 남았다 |
-| **위치 권한** | ❌ | 매니페스트에 위치 권한이 없고 iOS `NSLocationWhenInUseUsageDescription`도 없다. Android 웹뷰 `onGeolocationPermissionsShowPrompt`도 처리하지 않는다. **지금 앱에서는 출퇴근 위치를 못 잡는다** |
+| **위치 권한** | ✅ | Android `ACCESS_FINE_LOCATION` · `ACCESS_COARSE_LOCATION`, iOS `NSLocationWhenInUseUsageDescription`(2026-11-20). 웹이 `navigator.geolocation`을 부르면 Android는 `onGeolocationPermissionsShowPrompt`에서 웹 주소와 같은 https 출처만 OS 권한(`geolocator`)을 물어 허락한다(`retain: false`, 매번 OS 권한 재확인). 에뮬레이터에서 OS 권한 창이 한 번만 뜨고, 허용하면 좌표, 거부하면 웹이 `PERMISSION_DENIED`를 받는 것을 확인. iOS는 시뮬레이터 빌드만 확인 |
 | 위치 측정 · 조작 감지 (결정 8) | ❌ | 2026-11-20 결정: 앱 안에서는 네이티브가 좌표와 조작 여부를 함께 넘긴다. 네이티브 측정 코드와 JS 핸들러가 둘 다 없다 |
 | 파일 받기 (급여 PDF · 계약서) | ❌ | 두 경로를 따로 처리해야 한다. 급여 PDF는 같은 호스트 attachment라 `onDownloadStartRequest`로 받되 웹뷰 쿠키를 실어야 한다. 계약서는 S3 서명 주소로 302 리다이렉트돼서, **지금은 `isInApp`이 외부 브라우저로 내보낸다**. 둘 다 받은 뒤 공유 시트 |
 | 쿠키 유지 (자동 로그인 30일 / 7일) | 🟡 | 기본 동작에 맡겨 둔 상태. 앱을 백그라운드로 보낼 때 `CookieManager.flush()`를 부르지 않는다. 앱을 강제 종료한 뒤 로그인이 남는지 확인하지 않았다 |
@@ -59,15 +59,15 @@
 | Apple 4.2 최소 기능 (네이티브 기능 근거) | ❌ 지금은 순수 웹 래핑이다. 위치 · 파일 · 푸시가 붙어야 근거가 생긴다 |
 | 앱 안 계정 삭제 (13번) | ❌ 정책 미정 |
 | 개인정보 처리방침 · 고객지원 URL (14번) | ❌ 정책 미정 |
-| 위치 권한 사유 문구 · Play 데이터 보안 양식 | ❌ |
+| 위치 권한 사유 문구 · Play 데이터 보안 양식 | 🟡 iOS 사유 문구는 넣었다(「출퇴근을 기록할 때 근무지 근처에 있는지 확인하려고 현재 위치를 사용합니다.」). 문구 확정과 Play 데이터 보안 양식은 남았다 |
 
 ## 3. 다음에 할 일
 
-계획서의 진행 순서(1 껍데기 → 2 위치 · 파일 → 3 딥링크 → 4 푸시 → 5 스토어)로 보면 **1단계가 거의 끝났고 2단계는 시작 전**이다.
+계획서의 진행 순서(1 껍데기 → 2 위치 · 파일 → 3 딥링크 → 4 푸시 → 5 스토어)로 보면 **1단계는 끝났고(PR #2) 2단계는 위치 권한부터 시작했다**.
 
 1. **1절 코드 반영**: 끝났다(2026-11-20). 운영 URL 기본값 전환만 도메인이 열린 뒤에 한다
 2. **1단계 마무리 확인**: 실기기에서 로그인 → 앱 강제 종료 → 재실행 후 로그인 유지(쿠키 flush), 키보드와 Dock, 서명 패드와 당겨서 새로고침 충돌
-3. **위치 권한 (2단계, 최우선)**: Android 런타임 권한, iOS 사유 문구. 앱 안에서는 네이티브가 위치를 재므로 웹 geolocation 권한 창은 대비용으로만 처리한다. 출퇴근이 핵심 기능이라 이것 없이는 테스트를 못 한다
+3. **위치 권한 (2단계)**: 끝났다(2026-11-20). 웹 geolocation으로 출퇴근 화면을 지금 앱 안에서 테스트할 수 있다. iOS WKWebView는 OS 권한과 별도로 사이트 위치 확인 창을 띄울 수 있어, 실기기에서 몇 번 뜨는지 본다(5번 네이티브 측정으로 바뀌면 사라진다)
 4. **JS 브리지 골격**: 앱에 `addJavaScriptHandler`, 웹에 `native-bridge.ts`. 웹은 UA `WhaleStaffApp/`으로 앱 안인지 판별한다. 핸들러는 `WEB_URL` 출처의 최상위 프레임에서 온 호출만 받는다(UA는 감지용일 뿐 권한 확인에 쓰지 않는다)
 5. **위치 측정 · 조작 감지**: 핸들러가 한 번 잰 좌표와 조작 여부(Android `isMock()`, API 31+ · 24~30은 `isFromMockProvider()` / iOS `isSimulatedBySoftware`)를 함께 넘긴다. 웹 `check-in-screen.tsx`는 앱 안이면 `navigator.geolocation` 대신 이 값으로 좌표와 `mocked`를 채운다
 6. **파일 받기**: 급여 PDF는 `onDownloadStartRequest`에서 웹뷰 쿠키를 실어 받고, 계약서는 S3 호스트로 가는 이동을 가로채 받는다. 둘 다 저장 후 공유 시트
@@ -88,3 +88,4 @@
 - 2026-11-20 · `d292948` · 1절 코드 반영 마무리. iPhone 전용(`TARGETED_DEVICE_FAMILY = "1"`, iPad 방향 삭제), 앱 이름 「웨일ERP 직원」 세 곳, 운영 URL TODO에 주소 명시, UA `WhaleStaffApp/<버전>`(`package_info_plus`). iOS 시뮬레이터 · Android 에뮬레이터 빌드 확인
 - 2026-11-20 · `59dd8c1` · PR 전 코드리뷰 반영. 앱 버전 읽기(`readAppVersion`)가 실패하거나 2초 안에 끝나지 않으면 `unknown`으로 대체해, 첫 프레임을 미룬 채 OS 스플래시에서 멈추지 않게 함. 테스트 3개 추가. 1절 머리말, 아이콘 · 스플래시 교체 기록 줄의 분석 시점 HEAD(`ff4faf1` → `8ce2cbe`), CLAUDE.md의 테스트 · 버전 설명을 바로잡음
 - 2026-11-20 · `7a6c733` · PR 전 코드리뷰 2라운드 반영(동작 변경 없음). 버전 읽기 2초 타임아웃 테스트 추가, 주석 · 1절 머리말(남은 일에 번들 ID 보류 포함) · 앞 기록 문구를 바로잡음
+- 2026-11-20 · `51e558a` · 위치 권한. Android 위치 권한 2개, iOS 사용 중 위치 사유 문구, 웹 geolocation 요청을 웹 주소 출처만 OS 권한(`geolocator`)으로 허락. 에뮬레이터에서 허용 · 거부 두 경로 확인

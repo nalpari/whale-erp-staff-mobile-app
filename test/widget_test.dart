@@ -59,4 +59,16 @@ void main() {
       expect(tester.takeException(), isA<TimeoutException>());
     });
   });
+
+  test('위치는 웹 주소와 같은 호스트의 https 출처만 허락한다', () {
+    expect(isTrustedOrigin('https://staff-dev.whaleerp.co.kr', base), isTrue);
+    expect(isTrustedOrigin('https://staff-dev.whaleerp.co.kr/', base), isTrue);
+    expect(isTrustedOrigin('http://staff-dev.whaleerp.co.kr', base), isFalse);
+    expect(isTrustedOrigin('https://evil.example.com', base), isFalse);
+    expect(
+      isTrustedOrigin('https://staff-dev.whaleerp.co.kr.evil.com', base),
+      isFalse,
+    );
+    expect(isTrustedOrigin('', base), isFalse);
+  });
 }
