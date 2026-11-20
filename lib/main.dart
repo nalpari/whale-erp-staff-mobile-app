@@ -35,16 +35,47 @@ bool isTrustedOrigin(String origin, Uri base) {
   return uri != null && uri.scheme == 'https' && uri.host == base.host;
 }
 
-/// OS 위치 권한(앱 사용 중)을 확인하고, 아직 정하지 않았으면 한 번 묻는다.
-/// 영구 거부면 다시 묻지 않고 false. 이때 웹은 위치 「거부」로 받는다.
-Future<bool> ensureLocationPermission() async {
-  var permission = await Geolocator.checkPermission();
-  if (permission == LocationPermission.denied) {
-    permission = await Geolocator.requestPermission();
+/// OS 위치 권한(앱 사용 중)을 확인하고, 허락되지 않았지만 다시 물을 수 있으면(denied) 묻는다.
+/// 허락이면 true. 거부 · 영구 거부 · 오류 · [timeout] 초과면 false 이고, 웹은 위치 「거부」로 받는다.
+/// Android 는 영구 거부여도 checkPermission 이 denied 를 돌려줘서 requestPermission 까지 가지만,
+/// OS 가 창 없이 바로 거부한다.
+/// geolocator(Android)는 권한 창이 중단되면(빈 결과) 결과를 돌려주지 않아 future 가 끝나지 않는다.
+/// 그러면 웹의 위치 요청도 끝나지 않으므로 [timeout] 으로 끊는다.
+Future<bool> ensureLocationPermission({
+  Future<LocationPermission> Function() check = Geolocator.checkPermission,
+  Future<LocationPermission> Function() request = Geolocator.requestPermission,
+  Duration timeout = const Duration(seconds: 60),
+}) async {
+  try {
+    Future<bool> run() async {
+      var permission = await check();
+      if (permission == LocationPermission.denied) {
+        permission = await request();
+      }
+      return permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+    }
+
+    return await run().timeout(timeout);
+  } catch (e, s) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: e,
+        stack: s,
+        library: 'main',
+        context: ErrorDescription('위치 권한을 확인하지 못해 웹의 위치 요청을 거부함'),
+      ),
+    );
+    return false;
   }
-  return permission == LocationPermission.whileInUse ||
-      permission == LocationPermission.always;
 }
+
+/// 웹의 위치 요청을 허락할지. 믿는 출처가 아니면 OS 권한 창을 띄우지 않고 거부한다.
+Future<bool> allowGeolocation(
+  String origin,
+  Uri base,
+  Future<bool> Function() ensurePermission,
+) async => isTrustedOrigin(origin, base) && await ensurePermission();
 
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
 String appUserAgent(String version) => 'WhaleStaffApp/$version';
@@ -56,12 +87,14 @@ Future<String> readAppVersion(Future<PackageInfo> Function() read) async {
     final version = (await read().timeout(const Duration(seconds: 2))).version;
     return version.isEmpty ? 'unknown' : version;
   } catch (e, s) {
-    FlutterError.reportError(FlutterErrorDetails(
-      exception: e,
-      stack: s,
-      library: 'main',
-      context: ErrorDescription('앱 버전을 읽지 못해 User-Agent 에 unknown 을 붙임'),
-    ));
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: e,
+        stack: s,
+        library: 'main',
+        context: ErrorDescription('앱 버전을 읽지 못해 User-Agent 에 unknown 을 붙임'),
+      ),
+    );
     return 'unknown';
   }
 }
@@ -99,6 +132,11 @@ class _WebScreenState extends State<WebScreen> {
   bool _failed = false;
   bool _loaded = false;
   bool _splashGone = false;
+  // 권한 창이 떠 있는 동안 온 요청은 같은 결과를 기다린다. 겹쳐 부르면 geolocator 가 앞 요청의 결과를 잃는다.
+  Future<bool>? _locationPermission;
+
+  Future<bool> _ensureLocationPermission() => _locationPermission ??=
+      ensureLocationPermission().whenComplete(() => _locationPermission = null);
 
   void _markLoaded() {
     if (!_loaded) setState(() => _loaded = true);
@@ -141,16 +179,21 @@ class _WebScreenState extends State<WebScreen> {
                         useShouldOverrideUrlLoading: true,
                       ),
                       pullToRefreshController: _refresh,
-                      onWebViewCreated: (controller) => _controller = controller,
-                      // Android: 웹이 navigator.geolocation 을 부르면 여기로 온다. 웹뷰는 자체 확인 창이 없어서
-                      // OS 권한 창 한 번만 뜬다. 앱 안의 출퇴근 위치는 나중에 네이티브가 직접 잰다(계획 결정 8).
-                      // 이 처리는 웹이 geolocation 을 부를 때를 대비한 것이다. retain 을 끄면 매번 OS 권한을 다시 확인한다.
-                      // iOS 는 WKWebView 가 Info.plist 사유 문구로 OS 권한을 직접 묻는다.
+                      onWebViewCreated: (controller) =>
+                          _controller = controller,
+                      // Android 전용: 웹이 navigator.geolocation 을 부르면 여기로 온다. 웹뷰는 자체 확인 창이 없어서
+                      // OS 권한 창만 뜬다. 앱 안의 출퇴근 위치는 나중에 네이티브가 직접 잰다(계획 결정 8).
+                      // 이 처리는 웹이 geolocation 을 부를 때를 대비한 것이다. retain 을 끄면 웹뷰가 출처별 허락을
+                      // 저장하지 않아, 페이지를 새로 불러올 때마다 여기서 OS 권한을 다시 확인한다.
+                      // iOS 에는 이 콜백이 없다. WKWebView 가 OS 권한(Info.plist 사유 문구)과 자체 사이트 확인 창을
+                      // 직접 띄우고, 출처 검사(isTrustedOrigin)는 적용되지 않는다.
                       onGeolocationPermissionsShowPrompt:
                           (controller, origin) async {
-                            final allow =
-                                isTrustedOrigin(origin, _base) &&
-                                await ensureLocationPermission();
+                            final allow = await allowGeolocation(
+                              origin,
+                              _base,
+                              _ensureLocationPermission,
+                            );
                             return GeolocationPermissionShowPromptResponse(
                               origin: origin,
                               allow: allow,
