@@ -31,7 +31,7 @@
 | 오프라인 · 오류 화면 | ✅ | `_ErrorView` + 다시 시도 |
 | 스플래시 · 아이콘 · 상태바 | 🟡 | 확정 시안(후보 A)으로 이미지 교체 완료. 남은 일: 에뮬레이터 · 실기기에서 두 단계 스플래시 이어짐과 남보라 위 흰 상태바 아이콘(`SystemUiOverlayStyle.light`)이 잘 보이는지 확인 |
 | 키보드 | 🟡 | `adjustResize`는 있다. 하단 sticky Dock이 가리는지 실기기 확인이 남았다 |
-| **위치 권한** | 🟡 | Android `ACCESS_FINE_LOCATION` · `ACCESS_COARSE_LOCATION`, iOS `NSLocationWhenInUseUsageDescription`(2026-11-20). 웹이 `navigator.geolocation`을 부르면 Android는 `onGeolocationPermissionsShowPrompt`에서 웹 주소와 같은 https 출처만 OS 권한(`geolocator`)을 물어 허락한다(`retain: false`, 페이지를 새로 불러올 때마다 OS 권한 재확인). 권한 확인 오류 · 60초 무응답은 거부로 처리한다. 에뮬레이터에서 확인 창이 OS 것 하나만 뜨고, 허용하면 좌표, 거부하면 웹이 `PERMISSION_DENIED`를 받는 것을 확인. 남은 일: iOS는 이 콜백이 없어 출처 검사가 적용되지 않고(WKWebView가 직접 처리), OS 권한 창과 사이트 확인 창이 따로 뜰 수 있다. iOS는 시뮬레이터 빌드만 확인했고 실기기에서 창이 몇 번 뜨는지 봐야 한다. Android 「대략적 위치」로 허용하면 흐려진 좌표가 넘어가고, 영구 거부 · 위치 서비스 꺼짐일 때 설정 안내가 없다 |
+| **위치 권한** | 🟡 | Android `ACCESS_FINE_LOCATION` · `ACCESS_COARSE_LOCATION`, iOS `NSLocationWhenInUseUsageDescription`(2026-11-20). 웹이 `navigator.geolocation`을 부르면 Android는 `onGeolocationPermissionsShowPrompt`에서 웹 주소와 같은 https 출처만 OS 권한(`geolocator`)을 물어 허락한다(`retain: false`, 페이지를 새로 불러올 때마다 OS 권한 재확인). 권한 확인 오류 · 60초 무응답은 거부로 처리한다. 「대략적 위치」로 허락하면 앱을 켠 동안 한 번 정확한 위치로 바꿀지 다시 묻고, 대략적 위치 · 영구 거부 · 기기 위치 꺼짐이면 설정으로 가는 안내(SnackBar)를 띄운다. 에뮬레이터에서 확인 창이 OS 것 하나만 뜨고, 허용하면 좌표, 거부하면 웹이 `PERMISSION_DENIED`를 받는 것을 확인. 남은 일: iOS는 이 콜백이 없어 출처 검사가 적용되지 않고(WKWebView가 직접 처리), OS 권한 창과 사이트 확인 창이 따로 뜰 수 있다. iOS는 시뮬레이터 빌드만 확인했고 실기기에서 창이 몇 번 뜨는지 봐야 한다. 정확한 위치 재요청 창과 안내는 테스트로만 확인했고 에뮬레이터 · 실기기에서는 아직 못 봤다 |
 | 위치 측정 · 조작 감지 (결정 8) | ❌ | 2026-11-20 결정: 앱 안에서는 네이티브가 좌표와 조작 여부를 함께 넘긴다. 네이티브 측정 코드와 JS 핸들러가 둘 다 없다 |
 | 파일 받기 (급여 PDF · 계약서) | ❌ | 두 경로를 따로 처리해야 한다. 급여 PDF는 같은 호스트 attachment라 `onDownloadStartRequest`로 받되 웹뷰 쿠키를 실어야 한다. 계약서는 S3 서명 주소로 302 리다이렉트돼서, **지금은 `isInApp`이 외부 브라우저로 내보낸다**. 둘 다 받은 뒤 공유 시트 |
 | 쿠키 유지 (자동 로그인 30일 / 7일) | 🟡 | 기본 동작에 맡겨 둔 상태. 앱을 백그라운드로 보낼 때 `CookieManager.flush()`를 부르지 않는다. 앱을 강제 종료한 뒤 로그인이 남는지 확인하지 않았다 |
@@ -91,3 +91,4 @@
 - 2026-11-20 · `7a6c733` · PR 전 코드리뷰 2라운드 반영(동작 변경 없음). 버전 읽기 2초 타임아웃 테스트 추가, 주석 · 1절 머리말(남은 일에 번들 ID 보류 포함) · 앞 기록 문구를 바로잡음
 - 2026-11-20 · `51e558a` · 위치 권한. Android 위치 권한 2개, iOS 사용 중 위치 사유 문구, 웹 geolocation 요청을 웹 주소 출처만 OS 권한(`geolocator`)으로 허락. 에뮬레이터에서 허용 · 거부 두 경로 확인
 - 2026-11-20 · `06ef8d2` · PR 전 코드리뷰 반영. 위치 권한 확인의 오류 · 60초 무응답(geolocator가 권한 창 중단 시 결과를 안 돌려줌)을 거부로 처리하고 오류를 보고, 겹친 요청은 결과를 공유. 허락 판단을 `allowGeolocation`으로 빼고 테스트 7개 추가. 위치 권한 행을 🟡로(iOS 출처 검사 없음 · 실기기 미확인, Android 대략적 위치 · 설정 안내 없음), iOS 업로드용 `BYPASS_PERMISSION_LOCATION_ALWAYS` 기록
+- 2026-11-20 · `7c718b3` · 리뷰 지적 중 사용자 결정분 반영. 위치 상태를 `LocationAccess`(정확 · 대략 · 기기 위치 꺼짐 · 거부 · 영구 거부)로 나눔. 대략적 위치면 앱을 켠 동안 한 번 정확한 위치를 다시 요청하고, 대략 · 영구 거부 · 위치 꺼짐이면 설정 안내를 띄움. 테스트 갱신(20개)

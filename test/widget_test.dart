@@ -73,83 +73,163 @@ void main() {
     expect(isTrustedOrigin('', base), isFalse);
   });
 
-  group('ensureLocationPermission', () {
-    Future<LocationPermission> Function() returns(LocationPermission p) =>
-        () async => p;
+  group('ensureLocationAccess', () {
+    Future<T> Function() returns<T>(T v) =>
+        () async => v;
+    final precise = returns(LocationAccuracyStatus.precise);
+    final on = returns(true);
 
-    test('이미 허락이면 묻지 않고 true', () async {
-      var asked = 0;
+    test('이미 정확한 위치까지 허락이면 묻지 않고 precise', () async {
       for (final p in [
         LocationPermission.whileInUse,
         LocationPermission.always,
       ]) {
         expect(
-          await ensureLocationPermission(
+          await ensureLocationAccess(
             check: returns(p),
-            request: () async {
-              asked++;
-              return p;
-            },
+            request: () => fail('묻지 않아야 한다'),
+            accuracy: precise,
+            serviceEnabled: on,
           ),
-          isTrue,
+          LocationAccess.precise,
         );
       }
-      expect(asked, 0);
     });
 
     test('denied 면 한 번 묻고 그 결과를 따른다', () async {
       expect(
-        await ensureLocationPermission(
+        await ensureLocationAccess(
           check: returns(LocationPermission.denied),
           request: returns(LocationPermission.whileInUse),
+          accuracy: precise,
+          serviceEnabled: on,
         ),
-        isTrue,
+        LocationAccess.precise,
       );
       expect(
-        await ensureLocationPermission(
+        await ensureLocationAccess(
+          check: returns(LocationPermission.denied),
+          request: returns(LocationPermission.denied),
+        ),
+        LocationAccess.denied,
+      );
+    });
+
+    test('Android 영구 거부는 요청 결과로 deniedForever 가 된다', () async {
+      expect(
+        await ensureLocationAccess(
           check: returns(LocationPermission.denied),
           request: returns(LocationPermission.deniedForever),
         ),
-        isFalse,
+        LocationAccess.deniedForever,
+      );
+      expect(
+        await ensureLocationAccess(
+          check: returns(LocationPermission.deniedForever),
+          request: () => fail('묻지 않아야 한다'),
+        ),
+        LocationAccess.deniedForever,
       );
     });
 
-    test('영구 거부 · 판단 불가면 묻지 않고 false', () async {
-      for (final p in [
-        LocationPermission.deniedForever,
-        LocationPermission.unableToDetermine,
-      ]) {
-        expect(
-          await ensureLocationPermission(
-            check: returns(p),
-            request: () => fail('묻지 않아야 한다'),
-          ),
-          isFalse,
-        );
-      }
+    test('판단 불가면 묻지 않고 denied', () async {
+      expect(
+        await ensureLocationAccess(
+          check: returns(LocationPermission.unableToDetermine),
+          request: () => fail('묻지 않아야 한다'),
+        ),
+        LocationAccess.denied,
+      );
     });
 
-    testWidgets('권한 확인이 실패하면 false 를 돌려주고 오류를 보고한다', (tester) async {
-      final allowed = await ensureLocationPermission(
+    test('기기 위치가 꺼져 있으면 serviceDisabled', () async {
+      expect(
+        await ensureLocationAccess(
+          check: returns(LocationPermission.whileInUse),
+          accuracy: precise,
+          serviceEnabled: returns(false),
+        ),
+        LocationAccess.serviceDisabled,
+      );
+    });
+
+    test('대략적 위치면 한 번 더 묻고, 정확한 위치로 바꾸면 precise', () async {
+      var asked = 0;
+      var status = LocationAccuracyStatus.reduced;
+      expect(
+        await ensureLocationAccess(
+          check: returns(LocationPermission.whileInUse),
+          request: () async {
+            asked++;
+            status = LocationAccuracyStatus.precise;
+            return LocationPermission.whileInUse;
+          },
+          accuracy: () async => status,
+          serviceEnabled: on,
+        ),
+        LocationAccess.precise,
+      );
+      expect(asked, 1);
+    });
+
+    test('대략적 위치를 유지하면 approximate, askPrecise 가 꺼져 있으면 묻지 않는다', () async {
+      final reduced = returns(LocationAccuracyStatus.reduced);
+      expect(
+        await ensureLocationAccess(
+          check: returns(LocationPermission.whileInUse),
+          request: returns(LocationPermission.whileInUse),
+          accuracy: reduced,
+          serviceEnabled: on,
+        ),
+        LocationAccess.approximate,
+      );
+      expect(
+        await ensureLocationAccess(
+          check: returns(LocationPermission.whileInUse),
+          request: () => fail('묻지 않아야 한다'),
+          accuracy: reduced,
+          serviceEnabled: on,
+          askPrecise: false,
+        ),
+        LocationAccess.approximate,
+      );
+    });
+
+    testWidgets('권한 확인이 실패하면 denied 를 돌려주고 오류를 보고한다', (tester) async {
+      final access = await ensureLocationAccess(
         check: () async => throw Exception('activity 없음'),
       );
-      expect(allowed, isFalse);
+      expect(access, LocationAccess.denied);
       expect(tester.takeException(), isA<Exception>());
     });
 
-    testWidgets('권한 창 결과가 오지 않으면 시간 초과 뒤 false', (tester) async {
-      bool? allowed;
-      ensureLocationPermission(
+    testWidgets('권한 창 결과가 오지 않으면 시간 초과 뒤 denied', (tester) async {
+      LocationAccess? access;
+      ensureLocationAccess(
         check: returns(LocationPermission.denied),
         request: () => Completer<LocationPermission>().future,
         timeout: const Duration(seconds: 60),
-      ).then((v) => allowed = v);
+      ).then((v) => access = v);
       await tester.pump(const Duration(seconds: 59));
-      expect(allowed, isNull);
+      expect(access, isNull);
       await tester.pump(const Duration(seconds: 1));
-      expect(allowed, isFalse);
+      expect(access, LocationAccess.denied);
       expect(tester.takeException(), isA<TimeoutException>());
     });
+  });
+
+  test('웹 허락과 안내는 위치 상태를 따른다', () {
+    expect(LocationAccess.precise.allowsWeb, isTrue);
+    expect(LocationAccess.approximate.allowsWeb, isTrue);
+    expect(LocationAccess.serviceDisabled.allowsWeb, isTrue);
+    expect(LocationAccess.denied.allowsWeb, isFalse);
+    expect(LocationAccess.deniedForever.allowsWeb, isFalse);
+
+    expect(locationGuide(LocationAccess.precise), isNull);
+    expect(locationGuide(LocationAccess.denied), isNull);
+    expect(locationGuide(LocationAccess.approximate)?.appSettings, isTrue);
+    expect(locationGuide(LocationAccess.deniedForever)?.appSettings, isTrue);
+    expect(locationGuide(LocationAccess.serviceDisabled)?.appSettings, isFalse);
   });
 
   group('allowGeolocation', () {

@@ -35,25 +35,68 @@ bool isTrustedOrigin(String origin, Uri base) {
   return uri != null && uri.scheme == 'https' && uri.host == base.host;
 }
 
+/// 위치를 쓸 수 있는 상태. 웹의 위치 요청을 허락할지와 사용자에게 띄울 안내를 정한다.
+enum LocationAccess {
+  /// 정확한 위치까지 허락.
+  precise,
+
+  /// 「대략적 위치」만 허락(Android 12+). 좌표가 km 단위로 흐려져 근무지 판정이 틀릴 수 있다.
+  approximate,
+
+  /// 권한은 허락인데 기기 위치(위치 서비스)가 꺼져 있다. 웹은 좌표를 받지 못한다.
+  serviceDisabled,
+
+  /// 거부(다시 물을 수 있음) · 판단 불가 · 오류 · 시간 초과.
+  denied,
+
+  /// 영구 거부. OS 가 더는 창을 띄우지 않아 설정에서만 바꿀 수 있다.
+  deniedForever;
+
+  /// 웹뷰에 위치를 허락할지. 권한이 있으면 허락하고, 좌표 품질 문제는 안내로 알린다.
+  bool get allowsWeb =>
+      this == precise || this == approximate || this == serviceDisabled;
+}
+
 /// OS 위치 권한(앱 사용 중)을 확인하고, 허락되지 않았지만 다시 물을 수 있으면(denied) 묻는다.
-/// 허락이면 true. 거부 · 영구 거부 · 오류 · [timeout] 초과면 false 이고, 웹은 위치 「거부」로 받는다.
+/// 허락됐는데 「대략적 위치」면 [askPrecise] 일 때 한 번 더 물어 정확한 위치로 바꿀 기회를 준다
+/// (Android 는 FINE 을 다시 요청하면 「정확한 위치로 변경」 창을 띄운다).
 /// Android 는 영구 거부여도 checkPermission 이 denied 를 돌려줘서 requestPermission 까지 가지만,
-/// OS 가 창 없이 바로 거부한다.
+/// OS 가 창 없이 바로 거부하고 deniedForever 가 돌아온다.
 /// geolocator(Android)는 권한 창이 중단되면(빈 결과) 결과를 돌려주지 않아 future 가 끝나지 않는다.
-/// 그러면 웹의 위치 요청도 끝나지 않으므로 [timeout] 으로 끊는다.
-Future<bool> ensureLocationPermission({
+/// 그러면 웹의 위치 요청도 끝나지 않으므로 [timeout] 으로 끊는다. 오류 · 시간 초과는 보고하고 denied.
+Future<LocationAccess> ensureLocationAccess({
   Future<LocationPermission> Function() check = Geolocator.checkPermission,
   Future<LocationPermission> Function() request = Geolocator.requestPermission,
+  Future<LocationAccuracyStatus> Function() accuracy =
+      Geolocator.getLocationAccuracy,
+  Future<bool> Function() serviceEnabled = Geolocator.isLocationServiceEnabled,
+  bool askPrecise = true,
   Duration timeout = const Duration(seconds: 60),
 }) async {
   try {
-    Future<bool> run() async {
+    Future<LocationAccess> run() async {
       var permission = await check();
       if (permission == LocationPermission.denied) {
         permission = await request();
       }
-      return permission == LocationPermission.whileInUse ||
-          permission == LocationPermission.always;
+      if (permission == LocationPermission.deniedForever) {
+        return LocationAccess.deniedForever;
+      }
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return LocationAccess.denied;
+      }
+      if (!await serviceEnabled()) return LocationAccess.serviceDisabled;
+      if (await accuracy() == LocationAccuracyStatus.precise) {
+        return LocationAccess.precise;
+      }
+      if (askPrecise) {
+        await request();
+        if (await accuracy() == LocationAccuracyStatus.precise) {
+          return LocationAccess.precise;
+        }
+      }
+      return LocationAccess.approximate;
     }
 
     return await run().timeout(timeout);
@@ -66,9 +109,32 @@ Future<bool> ensureLocationPermission({
         context: ErrorDescription('위치 권한을 확인하지 못해 웹의 위치 요청을 거부함'),
       ),
     );
-    return false;
+    return LocationAccess.denied;
   }
 }
+
+/// 위치 상태에 맞춰 사용자에게 띄울 안내. 안내할 것이 없으면 null.
+/// [appSettings] 가 true 면 앱 설정, false 면 기기 위치 설정을 연다.
+({String message, String action, bool appSettings})? locationGuide(
+  LocationAccess access,
+) => switch (access) {
+  LocationAccess.approximate => (
+    message: '정확한 위치가 꺼져 있어 출퇴근 위치가 맞지 않을 수 있어요.',
+    action: '설정',
+    appSettings: true,
+  ),
+  LocationAccess.deniedForever => (
+    message: '위치 권한이 꺼져 있어요. 출퇴근하려면 설정에서 위치를 허용해 주세요.',
+    action: '설정',
+    appSettings: true,
+  ),
+  LocationAccess.serviceDisabled => (
+    message: '휴대폰 위치가 꺼져 있어요. 출퇴근하려면 위치를 켜 주세요.',
+    action: '위치 켜기',
+    appSettings: false,
+  ),
+  LocationAccess.precise || LocationAccess.denied => null,
+};
 
 /// 웹의 위치 요청을 허락할지. 믿는 출처가 아니면 OS 권한 창을 띄우지 않고 거부한다.
 Future<bool> allowGeolocation(
@@ -133,10 +199,38 @@ class _WebScreenState extends State<WebScreen> {
   bool _loaded = false;
   bool _splashGone = false;
   // 권한 창이 떠 있는 동안 온 요청은 같은 결과를 기다린다. 겹쳐 부르면 geolocator 가 앞 요청의 결과를 잃는다.
-  Future<bool>? _locationPermission;
+  Future<LocationAccess>? _locationAccess;
+  // 「대략적 위치」면 정확한 위치로 바꿀지 앱을 켠 동안 한 번만 다시 묻는다. 페이지마다 물으면 귀찮다.
+  bool _askedPrecise = false;
 
-  Future<bool> _ensureLocationPermission() => _locationPermission ??=
-      ensureLocationPermission().whenComplete(() => _locationPermission = null);
+  Future<bool> _ensureLocationPermission() async {
+    final pending = _locationAccess ??= ensureLocationAccess(
+      askPrecise: !_askedPrecise,
+    ).whenComplete(() => _locationAccess = null);
+    final access = await pending;
+    if (access == LocationAccess.approximate) _askedPrecise = true;
+    if (mounted) _showLocationGuide(access);
+    return access.allowsWeb;
+  }
+
+  void _showLocationGuide(LocationAccess access) {
+    final guide = locationGuide(access);
+    if (guide == null) return;
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(guide.message),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: guide.action,
+            onPressed: guide.appSettings
+                ? Geolocator.openAppSettings
+                : Geolocator.openLocationSettings,
+          ),
+        ),
+      );
+  }
 
   void _markLoaded() {
     if (!_loaded) setState(() => _loaded = true);
