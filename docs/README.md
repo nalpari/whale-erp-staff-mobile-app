@@ -21,7 +21,7 @@
 
 ```bash
 git config --get core.hooksPath     # 이미 다른 폴더를 쓰고 있는지
-ls "$(git rev-parse --git-common-dir)/hooks" | grep -v '\.sample$'   # 기본 폴더에 직접 넣은 훅이 있는지
+ls "$(git rev-parse --git-common-dir)/hooks" 2>/dev/null | grep -v '\.sample$'   # 기본 폴더에 직접 넣은 훅이 있는지 (폴더가 없어도 없는 것)
 ```
 
 둘 다 비어 있으면 켠다.
