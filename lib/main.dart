@@ -6,8 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'file_download.dart';
 import 'location_reading.dart';
 import 'native_bridge.dart';
 
@@ -300,6 +303,29 @@ class _WebScreenState extends State<WebScreen> {
   bool _failed = false;
   bool _loaded = false;
   bool _splashGone = false;
+  // 파일을 받는 중이면 또 누른 것은 무시한다(같은 파일을 두 번 받아 공유 시트가 겹치지 않게).
+  bool _downloading = false;
+  // 웹뷰의 이동 · 받기를 앱이 가로챈 때. 바로 뒤 오는 main frame 오류는 가로채기 때문이라 오류 화면을 띄우지 않는다.
+  DateTime? _interceptedAt;
+  // 가로챈 주소. 오류 무시는 이 주소에서 온 오류만 한다(다른 페이지의 진짜 오류는 오류 화면으로).
+  Uri? _interceptedUrl;
+  // 직전에 로그인 화면 등으로 웹뷰에 넘긴 받기. 같은 받기가 곧바로 또 화면을 받으면(앱이 읽은 쿠키가 웹뷰와 어긋남)
+  // 로그인 → 받기 → 로그인이 사람 손 없이 되풀이되므로 끊는다.
+  ({Uri url, DateTime at})? _lastOpenInWebView;
+  // 받기 결과 화면(로그인 등)을 웹뷰에 열려고 앱이 직접 연 주소. 그 주소가 급여 PDF 주소여도 한 번은 가로채지 않는다
+  // (가로채면 화면을 보여 주지 못하고 같은 받기가 되풀이된다).
+  // Android 는 loadUrl 로 연 이동에 shouldOverrideUrlLoading 을 부르지 않아 값이 남을 수 있다. 몇 초 뒤에는 무시해
+  // 나중에 사용자가 같은 주소를 눌렀을 때 가로채기가 빠지지 않게 한다.
+  ({Uri url, DateTime at})? _openingInWebView;
+
+  bool _justIntercepted(Uri? errorUrl) {
+    final at = _interceptedAt;
+    return at != null &&
+        errorUrl != null &&
+        errorUrl.toString() == _interceptedUrl.toString() &&
+        DateTime.now().difference(at) < const Duration(seconds: 3);
+  }
+
   // 시간 제한이 지난 뒤 온 요청은 권한을 새로 요청한다. 앞 요청을 기다리게 하면 안 된다:
   // geolocator(Android)는 권한 창이 취소되면(빈 결과) 앞 요청을 영영 끝내지 않아 앱을 다시 켤 때까지
   // 위치를 못 쓴다. 새 요청은 앞 요청의 결과 콜백을 덮어쓰므로, 창이 아직 떠 있었다면 그 창의 결과는
@@ -337,6 +363,147 @@ class _WebScreenState extends State<WebScreen> {
 
   Future<bool> _ensureLocationPermission() async =>
       (await _ensureLocationAccess()).allowsWeb;
+
+  /// 웹뷰 대신 앱이 파일을 받아 공유 시트로 연다. [withCookies] 면 웹뷰 쿠키(로그인)를 싣는다(같은 호스트의 급여 PDF).
+  Future<void> _receiveFile(
+    Uri url, {
+    required bool withCookies,
+    required String fallbackName,
+  }) async {
+    // 웹뷰가 받으려던 이동을 가로챘다. iOS 는 PDF 응답을 cancel 하면 main frame 오류(WebKitErrorDomain 102 등)를
+    // 보내므로, 바로 뒤 오는 오류는 연결 실패 화면으로 보지 않는다(onReceivedError).
+    _interceptedAt = DateTime.now();
+    _interceptedUrl = url;
+    if (_downloading) return;
+    _downloading = true;
+    // 이 받기가 잡은 잠금만 한 번 푼다. 공유 직전에 풀고 finally 에서 또 풀면, 그 사이 시작된 다음 받기의 잠금까지 풀린다.
+    var released = false;
+    void release() {
+      if (released) return;
+      released = true;
+      _downloading = false;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('파일을 받는 중이에요…'), duration: downloadTimeout),
+    );
+    void fail(
+      Object error,
+      StackTrace? stack, {
+      String context = '파일을 받지 못함',
+      String message = downloadFailedMessage,
+    }) {
+      // 예외 글에 S3 서명 주소가 들어 있을 수 있어 쿼리를 지우고 남긴다.
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: StateError(
+            '${error.runtimeType}: ${redactUrls(error.toString())}',
+          ),
+          stack: stack,
+          library: 'main',
+          context: ErrorDescription(context),
+        ),
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), showCloseIcon: true),
+      );
+    }
+
+    try {
+      String? cookie;
+      if (withCookies) {
+        // 쿠키 저장소가 답하지 않으면 받기가 끝나지 않고 중복 탭 막기도 풀리지 않으므로 제한을 건다.
+        final cookies = await CookieManager.instance()
+            .getCookies(url: WebUri.uri(url))
+            .timeout(const Duration(seconds: 5));
+        cookie = cookies.map((c) => '${c.name}=${c.value}').join('; ');
+      }
+      final outcome = await downloadFile(
+        url,
+        directory: await getTemporaryDirectory(),
+        fallbackName: fallbackName,
+        cookie: cookie,
+        // 리다이렉트마다 그 주소에 맞는 웹뷰 쿠키(Path 등)를 다시 고른다.
+        cookieFor: withCookies
+            ? (u) async {
+                final cookies = await CookieManager.instance()
+                    .getCookies(url: WebUri.uri(u))
+                    .timeout(const Duration(seconds: 5));
+                return cookies.map((c) => '${c.name}=${c.value}').join('; ');
+              }
+            : null,
+        userAgent: appUserAgent(widget.version),
+      );
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      switch (outcome) {
+        case DownloadedFile(:final path, :final mimeType):
+          // 공유 시트는 모달이라 중복 탭이 들어오지 않는다. 시트가 닫히지 않아도 다음 받기가 막히지 않게 먼저 푼다.
+          release();
+          try {
+            await SharePlus.instance.share(
+              ShareParams(
+                files: [XFile(path, mimeType: mimeType)],
+                // iPad 에서는 공유 창(팝오버)을 띄울 기준 위치가 있어야 한다. 화면 가운데를 준다.
+                sharePositionOrigin: Rect.fromCenter(
+                  center: MediaQuery.sizeOf(context).center(Offset.zero),
+                  width: 1,
+                  height: 1,
+                ),
+              ),
+            );
+          } catch (e, s) {
+            fail(
+              e,
+              s,
+              context: '받은 파일의 공유 화면을 열지 못함',
+              message: '파일은 받았지만 공유 화면을 열지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+            );
+          }
+        case DownloadMessage(:final message):
+          messenger.showSnackBar(
+            SnackBar(content: Text(message), showCloseIcon: true),
+          );
+        case OpenInWebView(url: final page):
+          // 접속이 끝나 로그인 화면이 온 경우 등. HTML 이 온 최종 주소(로그인 · 상세)를 연다. 웹이 로그인 뒤 돌려보낸다.
+          // 쿠키를 싣는 같은 출처 받기에서만 이렇게 한다. S3 등 다른 곳의 HTML 은 받기 실패로 본다
+          // (그 주소를 다시 열면 같은 가로채기로 되풀이된다).
+          final last = _lastOpenInWebView;
+          final repeated =
+              last != null &&
+              last.url == url &&
+              DateTime.now().difference(last.at) < const Duration(seconds: 15);
+          if (repeated) {
+            _lastOpenInWebView = null;
+            fail(
+              StateError('받기가 화면으로 되풀이됨: $page'),
+              null,
+              message: '로그인 정보를 확인하지 못했어요. 앱을 다시 열고 시도해 주세요.',
+            );
+          } else if (withCookies && isTrustedOrigin(page.origin, _base)) {
+            _lastOpenInWebView = (url: url, at: DateTime.now());
+            // 웹뷰가 이 화면을 여는 데 생긴 오류는 연결 실패 화면으로 보여야 하므로 가로채기 창을 닫는다.
+            _interceptedAt = null;
+            _openingInWebView = (url: page, at: DateTime.now());
+            await _controller?.loadUrl(
+              urlRequest: URLRequest(url: WebUri.uri(page)),
+            );
+          } else {
+            fail(StateError('파일 대신 화면이 옴: $page'), null);
+          }
+        case DownloadFailed(:final error, :final stack):
+          fail(error, stack);
+      }
+    } catch (e, s) {
+      if (mounted) messenger.hideCurrentSnackBar();
+      fail(e, s);
+    } finally {
+      release();
+    }
+  }
 
   void _showLocationGuide(LocationGuide guide) {
     final messenger = ScaffoldMessenger.of(context);
@@ -428,6 +595,31 @@ class _WebScreenState extends State<WebScreen> {
                         javaScriptBridgeForMainFrameOnly: true,
                       ),
                       pullToRefreshController: _refresh,
+                      // 급여 PDF 「명세서 내보내기」(download 링크, attachment). 웹뷰는 파일을 받지 않으므로 앱이 웹뷰 쿠키를
+                      // 실어 받는다. S3 서명 주소는 쿠키 없이 받는다. 그 밖의 다운로드는 무시한다.
+                      onDownloadStarting: (controller, request) {
+                        final url = request.url;
+                        // 쿠키(로그인)를 싣는 곳은 웹 주소와 같은 출처(https · 호스트 · 포트)뿐이다. http 로는 보내지 않는다.
+                        if ((url.scheme == 'https' || url.scheme == 'http') &&
+                            isTrustedOrigin(url.origin, _base)) {
+                          unawaited(
+                            _receiveFile(
+                              url,
+                              withCookies: true,
+                              fallbackName: '급여명세서.pdf',
+                            ),
+                          );
+                        } else if (isSignedDownload(url)) {
+                          unawaited(
+                            _receiveFile(
+                              url,
+                              withCookies: false,
+                              fallbackName: '근로계약서',
+                            ),
+                          );
+                        }
+                        return null;
+                      },
                       onWebViewCreated: (controller) {
                         _controller = controller;
                         _bridge.attach(controller);
@@ -453,10 +645,47 @@ class _WebScreenState extends State<WebScreen> {
                           },
                       shouldOverrideUrlLoading: (controller, action) async {
                         final uri = action.request.url;
+                        // 급여 PDF 「명세서 내보내기」: 실패 응답(평문 오류 · 로그인 이동)은 웹뷰가 페이지로 열어 오류 글이
+                        // 화면을 덮으므로, 웹뷰가 이동하기 전에 앱이 쿠키를 실어 받는다. 성공 PDF 도 한 번만 만들어진다.
+                        final opening = _openingInWebView;
+                        if (opening != null &&
+                            DateTime.now().difference(opening.at) >=
+                                const Duration(seconds: 5)) {
+                          _openingInWebView = null;
+                        } else if (uri != null &&
+                            opening != null &&
+                            opening.url.toString() == uri.toString()) {
+                          _openingInWebView = null;
+                          return NavigationActionPolicy.ALLOW;
+                        }
+                        if (uri != null &&
+                            action.isForMainFrame &&
+                            isPayslipPdf(uri, _base)) {
+                          unawaited(
+                            _receiveFile(
+                              uri,
+                              withCookies: true,
+                              fallbackName: '급여명세서.pdf',
+                            ),
+                          );
+                          return NavigationActionPolicy.CANCEL;
+                        }
                         if (uri == null ||
                             !action.isForMainFrame ||
                             isInApp(uri, _base)) {
                           return NavigationActionPolicy.ALLOW;
+                        }
+                        // 근로계약서 받기: 같은 호스트 라우트가 S3 서명 주소로 302 이동한다. 바깥 브라우저로 내보내지 않고
+                        // 앱이 받아 공유 시트로 연다. 서명 주소가 곧 권한이라 쿠키는 싣지 않는다.
+                        if (isSignedDownload(uri)) {
+                          unawaited(
+                            _receiveFile(
+                              uri,
+                              withCookies: false,
+                              fallbackName: '근로계약서',
+                            ),
+                          );
+                          return NavigationActionPolicy.CANCEL;
                         }
                         await launchUrl(
                           uri,
@@ -465,6 +694,8 @@ class _WebScreenState extends State<WebScreen> {
                         return NavigationActionPolicy.CANCEL;
                       },
                       onLoadStop: (controller, _) async {
+                        // 앱이 연 이동이 끝났으니 가로채기 예외 표시를 지운다(Android 는 loadUrl 에 shouldOverrideUrlLoading 을 안 부른다).
+                        _openingInWebView = null;
                         _refresh.endRefreshing();
                         if (_loaded) return;
                         // onLoadStop 은 그리기 전에 온다. 바로 걷으면 빈 흰 웹뷰가 비친다.
@@ -484,9 +715,13 @@ class _WebScreenState extends State<WebScreen> {
                         }
                       },
                       onReceivedError: (_, request, error) {
+                        if (request.isForMainFrame != false) {
+                          _openingInWebView = null;
+                        }
                         _refresh.endRefreshing();
                         if (request.isForMainFrame == false ||
-                            error.type == WebResourceErrorType.CANCELLED) {
+                            error.type == WebResourceErrorType.CANCELLED ||
+                            _justIntercepted(request.url)) {
                           return;
                         }
                         setState(() => _failed = true);
