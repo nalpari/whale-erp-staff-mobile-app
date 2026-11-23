@@ -200,6 +200,11 @@ void main() {
                 ),
               );
               return;
+            case '/refresh':
+              // 로그인을 갱신하며 PDF 로 돌려보낸다.
+              res.cookies.add(Cookie('access', 'new'));
+              res.redirect(Uri.parse('/pdf'));
+              return;
             case '/loop':
               res.redirect(Uri.parse('/loop'));
               return;
@@ -323,6 +328,17 @@ void main() {
           dir.listSync().where((e) => e.path.contains('download-')),
           isEmpty,
         );
+      });
+
+      test('리다이렉트 응답이 준 쿠키(로그인 갱신)를 다음 요청에 싣는다', () async {
+        final outcome = await downloadFile(
+          at('/refresh'),
+          directory: dir,
+          fallbackName: 'f',
+          cookie: 'access=old; keep=1',
+        );
+        expect(outcome, isA<DownloadedFile>());
+        expect(seenCookies, ['access=old; keep=1', 'access=new; keep=1']);
       });
 
       test('리다이렉트마다 그 주소에 맞는 쿠키를 다시 고른다', () async {
@@ -591,5 +607,12 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  test('쿠키 덮어쓰기: 새 값은 바꾸고 빈 값(만료)은 뺀다', () {
+    expect(mergeCookies('a=1; b=2', {'b': '3'}), 'a=1; b=3');
+    expect(mergeCookies('a=1; b=2', {'a': ''}), 'b=2');
+    expect(mergeCookies(null, {'c': '4'}), 'c=4');
+    expect(mergeCookies('a=x=y', {}), 'a=x=y');
   });
 }

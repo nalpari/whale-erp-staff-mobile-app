@@ -280,6 +280,21 @@ Stream<List<int>> _capped(Stream<List<int>> body, int limit) {
   });
 }
 
+/// `Cookie` 헤더 값 [base](`a=1; b=2`)에 [overrides] 를 덮어쓴다. 값이 빈 것은 지운 쿠키로 보고 뺀다.
+String mergeCookies(String? base, Map<String, String> overrides) {
+  final cookies = <String, String>{};
+  for (final part in (base ?? '').split(';')) {
+    final at = part.indexOf('=');
+    if (at <= 0) continue;
+    cookies[part.substring(0, at).trim()] = part.substring(at + 1).trim();
+  }
+  cookies.addAll(overrides);
+  return cookies.entries
+      .where((e) => e.value.isNotEmpty)
+      .map((e) => '${e.key}=${e.value}')
+      .join('; ');
+}
+
 /// 파일 받기에서 따라갈 리다이렉트 수. HttpClient 기본값과 같다.
 const maxDownloadRedirects = 5;
 
@@ -309,14 +324,19 @@ Future<DownloadOutcome> _download(
   // 리다이렉트는 직접 따라간다. HttpClient 의 자동 리다이렉트는 호스트가 바뀔 때만 쿠키를 떼서, 같은 호스트의
   // 다른 포트 · http 로 가면 로그인 쿠키가 따라간다. 쿠키는 처음 주소와 같은 출처(스킴 · 호스트 · 포트)에만 싣는다.
   var finalUrl = url;
+  // 같은 출처 리다이렉트 응답이 Set-Cookie 로 준 쿠키(로그인 갱신 등). 다음 요청에서 웹뷰 쿠키보다 앞선다.
+  final refreshed = <String, String>{};
   final response = await () async {
     for (var redirects = 0; ; redirects++) {
       final request = await client.getUrl(finalUrl);
       request.followRedirects = false;
       if (isSameOrigin(finalUrl, url)) {
         // 쿠키는 이동할 때마다 그 주소에 맞는 것(Path 등)을 다시 고른다. [cookieFor] 가 없으면 처음 쿠키를 쓴다.
-        final value = cookieFor != null ? await cookieFor(finalUrl) : cookie;
-        if (value != null && value.isNotEmpty) {
+        final value = mergeCookies(
+          cookieFor != null ? await cookieFor(finalUrl) : cookie,
+          refreshed,
+        );
+        if (value.isNotEmpty) {
           request.headers.set(HttpHeaders.cookieHeader, value);
         }
       }
@@ -327,6 +347,14 @@ Future<DownloadOutcome> _download(
       final location = response.headers.value(HttpHeaders.locationHeader);
       if (!response.isRedirect || location == null) return response;
       await response.drain<void>();
+      if (isSameOrigin(finalUrl, url)) {
+        for (final c in response.cookies) {
+          final expired =
+              c.maxAge == 0 ||
+              (c.expires != null && c.expires!.isBefore(DateTime.now()));
+          refreshed[c.name] = expired ? '' : c.value;
+        }
+      }
       if (redirects >= maxDownloadRedirects) {
         throw const HttpException('파일 받기 리다이렉트가 너무 많음');
       }

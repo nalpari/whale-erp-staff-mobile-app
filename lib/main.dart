@@ -694,6 +694,8 @@ class _WebScreenState extends State<WebScreen> {
                         return NavigationActionPolicy.CANCEL;
                       },
                       onLoadStop: (controller, _) async {
+                        // 앱이 연 이동이 끝났으니 가로채기 예외 표시를 지운다(Android 는 loadUrl 에 shouldOverrideUrlLoading 을 안 부른다).
+                        _openingInWebView = null;
                         _refresh.endRefreshing();
                         if (_loaded) return;
                         // onLoadStop 은 그리기 전에 온다. 바로 걷으면 빈 흰 웹뷰가 비친다.
@@ -713,6 +715,9 @@ class _WebScreenState extends State<WebScreen> {
                         }
                       },
                       onReceivedError: (_, request, error) {
+                        if (request.isForMainFrame != false) {
+                          _openingInWebView = null;
+                        }
                         _refresh.endRefreshing();
                         if (request.isForMainFrame == false ||
                             error.type == WebResourceErrorType.CANCELLED ||
