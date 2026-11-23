@@ -615,4 +615,24 @@ void main() {
     expect(mergeCookies(null, {'c': '4'}), 'c=4');
     expect(mergeCookies('a=x=y', {}), 'a=x=y');
   });
+
+  test('리다이렉트로 받은 쿠키는 Path 가 맞는 주소에만 보낸다', () {
+    final pay = Cookie('pay', '1')..path = '/pay';
+    final all = Cookie('access', 'new')..path = '/';
+    final gone = Cookie('old', 'x')..maxAge = 0;
+    final cookies = [pay, all, gone];
+    expect(cookiesFor(cookies, Uri.parse('https://a.b/pay/1/pdf')), {
+      'pay': '1',
+      'access': 'new',
+      'old': '',
+    });
+    expect(cookiesFor(cookies, Uri.parse('https://a.b/login')), {
+      'access': 'new',
+      'old': '',
+    });
+    expect(cookiesFor(cookies, Uri.parse('https://a.b/payroll')), {
+      'access': 'new',
+      'old': '',
+    });
+  });
 }

@@ -226,11 +226,17 @@ Future<void> _writeWithin(
 ) {
   final done = Completer<void>();
   late final StreamSubscription<List<int>> subscription;
+  // 진행 중인 디스크 쓰기. 기한 · 오류로 끝낼 때 이 쓰기가 끝난 뒤에 알려야 부르는 쪽이 파일을 닫고 지울 수 있다.
+  Future<void> pending = Future<void>.value();
+  var finishing = false;
   void finish([Object? error, StackTrace? stack]) {
-    if (done.isCompleted) return;
+    if (finishing) return;
+    finishing = true;
     if (error != null) {
       unawaited(subscription.cancel());
-      done.completeError(error, stack);
+      pending.then<void>((_) {}, onError: (_) {}).whenComplete(() {
+        if (!done.isCompleted) done.completeError(error, stack);
+      });
     } else {
       done.complete();
     }
@@ -243,17 +249,17 @@ Future<void> _writeWithin(
   subscription = body.listen(
     (chunk) {
       subscription.pause();
-      file
-          .writeFrom(chunk)
-          .then(
-            (_) {
-              if (!done.isCompleted) subscription.resume();
-            },
-            onError: (Object e, StackTrace s) {
-              timer.cancel();
-              finish(e, s);
-            },
-          );
+      final write = file.writeFrom(chunk);
+      pending = write;
+      write.then(
+        (_) {
+          if (!finishing) subscription.resume();
+        },
+        onError: (Object e, StackTrace s) {
+          timer.cancel();
+          finish(e, s);
+        },
+      );
     },
     onError: (Object e, StackTrace s) {
       timer.cancel();
@@ -278,6 +284,26 @@ Stream<List<int>> _capped(Stream<List<int>> body, int limit) {
     }
     return chunk;
   });
+}
+
+/// 리다이렉트 응답이 준 쿠키 가운데 [url] 에 보낼 것(웹뷰와 같은 Path 규칙)을 이름 → 값으로. 만료된 쿠키는 빈 값(지움).
+/// Domain 은 같은 출처 응답만 모으므로 따로 보지 않는다.
+Map<String, String> cookiesFor(List<Cookie> cookies, Uri url) {
+  final path = url.path.isEmpty ? '/' : url.path;
+  final out = <String, String>{};
+  for (final c in cookies) {
+    final scope = c.path ?? '/';
+    final inScope =
+        path == scope ||
+        (path.startsWith(scope) &&
+            (scope.endsWith('/') || path[scope.length] == '/'));
+    if (!inScope) continue;
+    final expired =
+        (c.maxAge != null && c.maxAge! <= 0) ||
+        (c.expires != null && c.expires!.isBefore(DateTime.now()));
+    out[c.name] = expired ? '' : c.value;
+  }
+  return out;
 }
 
 /// `Cookie` 헤더 값 [base](`a=1; b=2`)에 [overrides] 를 덮어쓴다. 값이 빈 것은 지운 쿠키로 보고 뺀다.
@@ -325,7 +351,7 @@ Future<DownloadOutcome> _download(
   // 다른 포트 · http 로 가면 로그인 쿠키가 따라간다. 쿠키는 처음 주소와 같은 출처(스킴 · 호스트 · 포트)에만 싣는다.
   var finalUrl = url;
   // 같은 출처 리다이렉트 응답이 Set-Cookie 로 준 쿠키(로그인 갱신 등). 다음 요청에서 웹뷰 쿠키보다 앞선다.
-  final refreshed = <String, String>{};
+  final refreshed = <Cookie>[];
   final response = await () async {
     for (var redirects = 0; ; redirects++) {
       final request = await client.getUrl(finalUrl);
@@ -334,7 +360,7 @@ Future<DownloadOutcome> _download(
         // 쿠키는 이동할 때마다 그 주소에 맞는 것(Path 등)을 다시 고른다. [cookieFor] 가 없으면 처음 쿠키를 쓴다.
         final value = mergeCookies(
           cookieFor != null ? await cookieFor(finalUrl) : cookie,
-          refreshed,
+          cookiesFor(refreshed, finalUrl),
         );
         if (value.isNotEmpty) {
           request.headers.set(HttpHeaders.cookieHeader, value);
@@ -349,10 +375,11 @@ Future<DownloadOutcome> _download(
       await response.drain<void>();
       if (isSameOrigin(finalUrl, url)) {
         for (final c in response.cookies) {
-          final expired =
-              c.maxAge == 0 ||
-              (c.expires != null && c.expires!.isBefore(DateTime.now()));
-          refreshed[c.name] = expired ? '' : c.value;
+          // 같은 이름 · 경로의 앞 갱신은 새 것으로 바꾼다.
+          refreshed.removeWhere(
+            (o) => o.name == c.name && (o.path ?? '/') == (c.path ?? '/'),
+          );
+          refreshed.add(c);
         }
       }
       if (redirects >= maxDownloadRedirects) {
