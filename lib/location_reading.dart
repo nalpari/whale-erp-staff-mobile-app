@@ -109,7 +109,10 @@ Future<Map<String, Object?>> measureLocation({
       'accuracyMeters': position.accuracy > 0 ? position.accuracy : null,
       'ageSeconds': age < 0 ? 0 : age,
       'mocked': position.isMocked,
-      'precise': await _readPrecise(accuracy),
+      // 대략적 위치 경로로 읽은 좌표는 그 뒤에 정확한 위치를 허락해도 흐린 좌표 그대로라 false 로 둔다.
+      'precise': access == LocationAccess.approximate
+          ? false
+          : await _readPrecise(accuracy),
     };
   } on TimeoutException {
     // Android 는 고정밀 위치가 꺼진 기기에서 「위치 정확도 켜기」 시스템 창을 띄울 수 있다.

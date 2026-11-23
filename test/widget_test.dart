@@ -690,7 +690,8 @@ void main() {
           return position();
         },
         approximatePosition: () async => position(),
-        accuracy: () async => LocationAccuracyStatus.reduced,
+        // 잰 직후 사용자가 정확한 위치를 허락했어도 이 좌표는 대략적 위치다.
+        accuracy: () async => LocationAccuracyStatus.precise,
       );
       expect(fresh, 0);
       expect(result['status'], 'ok');
