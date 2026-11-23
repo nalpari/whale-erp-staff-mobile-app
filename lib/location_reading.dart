@@ -163,10 +163,26 @@ void _report(Object e, StackTrace s, String context) =>
       ),
     );
 
-/// 지금 위치를 높은 정확도로 한 번 새로 읽는다. [measureTimeLimit] 안에 못 읽으면 TimeoutException.
-Future<Position> readCurrentPosition() => Geolocator.getCurrentPosition(
-  locationSettings: const LocationSettings(
-    accuracy: LocationAccuracy.high,
-    timeLimit: measureTimeLimit,
+/// 측정을 시작한 시각보다 이만큼까지 앞선 위치는 새 위치로 본다(기기 시계 · 위치 시각의 작은 어긋남).
+const freshnessTolerance = Duration(seconds: 2);
+
+/// [positions] 에서 [startedAt] 뒤에 잰(허용 오차 [tolerance] 안) 첫 위치를 고른다. 운영체제가 첫 결과로
+/// 직전에 캐시해 둔 옛 위치를 줄 수 있어(근무지에 막 도착했는데 이동 전 좌표), 그런 위치는 건너뛰고 다음 위치를 기다린다.
+/// [timeLimit] 안에 새 위치가 없으면 TimeoutException.
+Future<Position> firstFreshPosition(
+  Stream<Position> positions,
+  DateTime startedAt, {
+  Duration tolerance = freshnessTolerance,
+  Duration timeLimit = measureTimeLimit,
+}) => positions
+    .firstWhere((p) => !p.timestamp.isBefore(startedAt.subtract(tolerance)))
+    .timeout(timeLimit);
+
+/// 지금 위치를 높은 정확도로 새로 읽는다. 측정을 시작하기 전에 잰 위치는 쓰지 않는다([firstFreshPosition]).
+/// [measureTimeLimit] 안에 새 위치를 못 읽으면 TimeoutException.
+Future<Position> readCurrentPosition() => firstFreshPosition(
+  Geolocator.getPositionStream(
+    locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
   ),
+  DateTime.now(),
 );

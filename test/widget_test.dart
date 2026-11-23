@@ -916,4 +916,52 @@ void main() {
       );
     });
   });
+
+  group('firstFreshPosition', () {
+    final start = DateTime(2026, 11, 23, 9);
+    Position at(DateTime time, {double latitude = 37.5}) => Position(
+      latitude: latitude,
+      longitude: 127.0,
+      timestamp: time,
+      accuracy: 5,
+      altitude: 0,
+      altitudeAccuracy: 0,
+      heading: 0,
+      headingAccuracy: 0,
+      speed: 0,
+      speedAccuracy: 0,
+    );
+
+    test('측정 시작 전에 잰 옛 위치는 건너뛰고 다음 새 위치를 쓴다', () async {
+      final stale = at(start.subtract(const Duration(minutes: 3)), latitude: 1);
+      final fresh = at(start.add(const Duration(seconds: 1)), latitude: 2);
+      final position = await firstFreshPosition(
+        Stream.fromIterable([stale, fresh]),
+        start,
+      );
+      expect(position.latitude, 2);
+    });
+
+    test('허용 오차(2초) 안의 위치는 새 위치로 본다', () async {
+      final nearly = at(start.subtract(const Duration(seconds: 1)));
+      expect(
+        await firstFreshPosition(Stream.value(nearly), start),
+        same(nearly),
+      );
+    });
+
+    test('새 위치가 시간 안에 안 오면 TimeoutException', () async {
+      final controller = StreamController<Position>();
+      addTearDown(controller.close);
+      controller.add(at(start.subtract(const Duration(minutes: 3))));
+      await expectLater(
+        firstFreshPosition(
+          controller.stream,
+          start,
+          timeLimit: const Duration(milliseconds: 20),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+    });
+  });
 }
