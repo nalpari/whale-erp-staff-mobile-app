@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:staff/location_reading.dart';
 import 'package:staff/main.dart';
 import 'package:staff/native_bridge.dart';
 
@@ -543,6 +544,103 @@ void main() {
           'data': {'version': '1.0.0', 'platform': 'ios'},
         },
       );
+    });
+  });
+
+  group('measureLocation', () {
+    Position position({bool mocked = false}) => Position(
+          latitude: 37.5,
+          longitude: 127.0,
+          timestamp: DateTime(2026, 11, 23),
+          accuracy: 12,
+          altitude: 0,
+          altitudeAccuracy: 0,
+          heading: 0,
+          headingAccuracy: 0,
+          speed: 0,
+          speedAccuracy: 0,
+          isMocked: mocked,
+        );
+
+    Future<Map<String, Object?>> measure(
+      LocationAccess access, {
+      Future<Position> Function()? read,
+    }) =>
+        measureLocation(
+          ensureAccess: () async => access,
+          currentPosition: read ?? () async => position(),
+        );
+
+    test('정확한 위치면 좌표와 모의 여부를 같은 측정값에서 돌려준다', () async {
+      expect(
+        await measureLocation(
+          ensureAccess: () async => LocationAccess.precise,
+          currentPosition: () async => position(mocked: true),
+        ),
+        {
+          'status': 'ok',
+          'latitude': 37.5,
+          'longitude': 127.0,
+          'accuracyMeters': 12.0,
+          'mocked': true,
+          'precise': true,
+        },
+      );
+    });
+
+    test('대략적 위치도 재되 precise 를 false 로 알린다', () async {
+      final result = await measure(LocationAccess.approximate);
+      expect(result['status'], 'ok');
+      expect(result['precise'], false);
+      expect(result['mocked'], false);
+    });
+
+    test('권한이 없으면 재지 않고 denied', () async {
+      var read = false;
+      for (final access in [LocationAccess.denied, LocationAccess.deniedForever]) {
+        expect(
+          await measure(access, read: () async {
+            read = true;
+            return position();
+          }),
+          {'status': 'denied'},
+        );
+      }
+      expect(read, isFalse);
+    });
+
+    test('기기 위치 꺼짐 · 권한 확인 실패는 unavailable 과 이유', () async {
+      expect(await measure(LocationAccess.serviceDisabled),
+          {'status': 'unavailable', 'reason': 'serviceDisabled'});
+      expect(await measure(LocationAccess.failed),
+          {'status': 'unavailable', 'reason': 'permissionCheckFailed'});
+    });
+
+    test('측정이 시간을 넘거나 위치가 꺼지면 unavailable, 측정 중 권한이 막히면 denied', () async {
+      expect(
+        await measure(LocationAccess.precise,
+            read: () async => throw TimeoutException('x')),
+        {'status': 'unavailable', 'reason': 'timeout'},
+      );
+      expect(
+        await measure(LocationAccess.precise,
+            read: () async => throw const LocationServiceDisabledException()),
+        {'status': 'unavailable', 'reason': 'serviceDisabled'},
+      );
+      expect(
+        await measure(LocationAccess.precise,
+            read: () async => throw const PermissionDeniedException('x')),
+        {'status': 'denied'},
+      );
+    });
+
+    testWidgets('그 밖의 측정 오류는 보고하고 unavailable(error)', (tester) async {
+      expect(
+        await measure(LocationAccess.precise,
+            read: () async => throw StateError('x')),
+        {'status': 'unavailable', 'reason': 'error'},
+      );
+      expect(tester.takeException(), isA<StateError>());
     });
   });
 }

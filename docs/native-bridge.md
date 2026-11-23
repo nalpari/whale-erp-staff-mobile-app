@@ -54,5 +54,20 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 | 이름 | 인자 | `data` | 쓰는 곳 |
 | --- | --- | --- | --- |
 | `appInfo` | 없음 | `{ version: "1.0.0", platform: "android" \| "ios" \| "other" }` | 브리지가 살아 있는지 확인, 앱 버전별로 기능 켜고 끄기. 웹은 `platform`이 셋 밖의 값이면 `malformed`로 본다 |
+| `measureLocation` | 없음 | 아래 「measureLocation」 | 출퇴근 탭 지도와 출근 · 퇴근 판정. 앱 안에서는 `navigator.geolocation` 대신 이것을 쓴다(계획 결정 8) |
 
-다음에 붙일 기능(계획서 순서): 위치 측정 · 조작 감지(다음 할 일 5), 파일 받기(6), 뒤로 가기 · 바텀시트 닫기.
+### measureLocation
+
+위치 권한을 확인하고(아직 정하지 않았으면 OS 권한 창을 띄우고), 지금 위치를 **새로** 한 번 재어 좌표와 모의 위치 여부를 **같은 측정값에서** 함께 돌려준다. 마지막으로 알던 위치는 쓰지 않는다. `data`는 웹 출퇴근 화면의 위치 상태와 같은 이름을 쓴다.
+
+| `data.status` | 다른 칸 | 뜻 |
+| --- | --- | --- |
+| `"ok"` | `latitude`, `longitude`(도), `accuracyMeters`(미터), `mocked`(참 · 거짓), `precise`(참 · 거짓) | 위치를 쟀다. `mocked`는 운영체제가 알려 준 모의 위치 여부(Android `isMock` · `isFromMockProvider`, iOS `isSimulatedBySoftware`). `precise`가 거짓이면 Android 「대략적 위치」라 반경 판정이 틀릴 수 있다(판정은 그대로 하고, 앱이 화면 아래에 정확한 위치를 켜라는 안내를 띄운다) |
+| `"denied"` | 없음 | 위치 권한 거부(영구 거부 포함). 영구 거부면 앱이 설정으로 가는 안내를 띄운다 |
+| `"unavailable"` | `reason`: `"serviceDisabled"`(기기 위치 꺼짐) · `"permissionCheckFailed"`(권한 확인 실패) · `"timeout"`(8초 안에 위치를 못 읽음) · `"error"`(그 밖의 측정 오류) | 위치를 읽지 못했다. 기기 위치가 꺼졌으면 앱이 위치 설정으로 가는 안내를 띄운다 |
+
+- **시간:** 권한 창이 뜨면 사용자가 고르는 동안 기다린다(앱 안 상한 60초). 권한이 정해진 뒤 측정은 앱 안에서 8초로 끊는다. 그래서 웹은 이 기능만 기본 10초 대신 **`timeoutMs: 75_000`** 처럼 길게 기다린다. 권한이 이미 있으면 보통 몇 초 안에 끝난다.
+- **부작용 없음:** 다시 불러도 위치를 한 번 더 잴 뿐이다. 위치 수집 · 이용 확인자료는 웹이 지금처럼 서버에 남긴다(앱은 좌표를 저장하거나 서버로 보내지 않는다).
+- **겹친 호출:** 권한 창이 떠 있는 동안 온 호출은 같은 권한 결과를 기다린다.
+
+다음에 붙일 기능(계획서 순서): 파일 받기(다음 할 일 6), 뒤로 가기 · 바텀시트 닫기.

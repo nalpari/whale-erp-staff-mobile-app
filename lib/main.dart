@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'location_reading.dart';
 import 'native_bridge.dart';
 
 // TODO: 운영 주소는 https://staff.whaleerp.co.kr 이다. 도메인이 열리면(2026-11-19 현재 DNS 미등록) 기본값을 운영으로 바꾼다.
@@ -30,31 +31,6 @@ bool isInApp(Uri uri, Uri base) {
   }
   return (uri.scheme == 'http' || uri.scheme == 'https') &&
       uri.host == base.host;
-}
-
-/// 위치를 쓸 수 있는 상태. 웹의 위치 요청을 허락할지와 사용자에게 띄울 안내를 정한다.
-enum LocationAccess {
-  /// 정확한 위치까지 허락.
-  precise,
-
-  /// 「대략적 위치」만 허락(Android 12+). 좌표가 km 단위로 흐려져 근무지 판정이 틀릴 수 있다.
-  approximate,
-
-  /// 권한은 허락인데 기기 위치(위치 서비스)가 꺼져 있다. 웹은 좌표를 받지 못한다.
-  serviceDisabled,
-
-  /// 거부(다시 물을 수 있음) · 판단 불가.
-  denied,
-
-  /// 영구 거부. OS 가 더는 창을 띄우지 않아 설정에서만 바꿀 수 있다.
-  deniedForever,
-
-  /// 권한을 확인하다 오류가 나거나 시간이 넘었다. 사용자가 거부한 것이 아니므로 다시 시도하라고 안내한다.
-  failed;
-
-  /// 웹뷰에 위치를 허락할지. 권한이 있으면 허락하고, 좌표 품질 문제는 안내로 알린다.
-  bool get allowsWeb =>
-      this == precise || this == approximate || this == serviceDisabled;
 }
 
 /// OS 위치 권한(앱 사용 중)을 확인하고, 허락되지 않았지만 다시 물을 수 있으면(denied) 묻는다.
@@ -283,6 +259,10 @@ class _WebScreenState extends State<WebScreen> {
         version: widget.version,
         platform: defaultTargetPlatform,
       ),
+      'measureLocation': (_) => measureLocation(
+        ensureAccess: _ensureLocationAccess,
+        currentPosition: readCurrentPosition,
+      ),
     },
   );
   late final _refresh = PullToRefreshController(
@@ -307,7 +287,8 @@ class _WebScreenState extends State<WebScreen> {
   // 스플래시가 떠 있는 동안 나온 안내. 첫 페이지가 그려지면 띄운다.
   LocationGuide? _pendingGuide;
 
-  Future<bool> _ensureLocationPermission() async {
+  /// 위치 권한을 확인하고(필요하면 묻고) 안내를 띄운다. 웹 geolocation 요청과 브리지 `measureLocation` 이 같이 쓴다.
+  Future<LocationAccess> _ensureLocationAccess() async {
     final result = await _locationGate.request();
     if (result.started && mounted) {
       final guide = locationGuide(result.access);
@@ -323,8 +304,11 @@ class _WebScreenState extends State<WebScreen> {
         _pendingGuide = guide;
       }
     }
-    return result.access.allowsWeb;
+    return result.access;
   }
+
+  Future<bool> _ensureLocationPermission() async =>
+      (await _ensureLocationAccess()).allowsWeb;
 
   void _showLocationGuide(LocationGuide guide) {
     final messenger = ScaffoldMessenger.of(context);
