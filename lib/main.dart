@@ -314,7 +314,9 @@ class _WebScreenState extends State<WebScreen> {
   ({Uri url, DateTime at})? _lastOpenInWebView;
   // 받기 결과 화면(로그인 등)을 웹뷰에 열려고 앱이 직접 연 주소. 그 주소가 급여 PDF 주소여도 한 번은 가로채지 않는다
   // (가로채면 화면을 보여 주지 못하고 같은 받기가 되풀이된다).
-  Uri? _openingInWebView;
+  // Android 는 loadUrl 로 연 이동에 shouldOverrideUrlLoading 을 부르지 않아 값이 남을 수 있다. 몇 초 뒤에는 무시해
+  // 나중에 사용자가 같은 주소를 눌렀을 때 가로채기가 빠지지 않게 한다.
+  ({Uri url, DateTime at})? _openingInWebView;
 
   bool _justIntercepted(Uri? errorUrl) {
     final at = _interceptedAt;
@@ -485,7 +487,7 @@ class _WebScreenState extends State<WebScreen> {
             _lastOpenInWebView = (url: url, at: DateTime.now());
             // 웹뷰가 이 화면을 여는 데 생긴 오류는 연결 실패 화면으로 보여야 하므로 가로채기 창을 닫는다.
             _interceptedAt = null;
-            _openingInWebView = page;
+            _openingInWebView = (url: page, at: DateTime.now());
             await _controller?.loadUrl(
               urlRequest: URLRequest(url: WebUri.uri(page)),
             );
@@ -645,8 +647,14 @@ class _WebScreenState extends State<WebScreen> {
                         final uri = action.request.url;
                         // 급여 PDF 「명세서 내보내기」: 실패 응답(평문 오류 · 로그인 이동)은 웹뷰가 페이지로 열어 오류 글이
                         // 화면을 덮으므로, 웹뷰가 이동하기 전에 앱이 쿠키를 실어 받는다. 성공 PDF 도 한 번만 만들어진다.
-                        if (uri != null &&
-                            _openingInWebView?.toString() == uri.toString()) {
+                        final opening = _openingInWebView;
+                        if (opening != null &&
+                            DateTime.now().difference(opening.at) >=
+                                const Duration(seconds: 5)) {
+                          _openingInWebView = null;
+                        } else if (uri != null &&
+                            opening != null &&
+                            opening.url.toString() == uri.toString()) {
                           _openingInWebView = null;
                           return NavigationActionPolicy.ALLOW;
                         }

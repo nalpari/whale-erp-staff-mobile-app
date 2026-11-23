@@ -216,34 +216,52 @@ const maxFileBytes = 50 * 1024 * 1024;
 /// 평문 오류 글의 상한. 넘으면 실패로 본다.
 const maxMessageBytes = 64 * 1024;
 
-/// [body] 를 [sink] 에 쓴다. [limit] 안에 끝나지 않으면 구독을 끊고 TimeoutException.
-/// `pipe(...).timeout` 은 구독을 끊지 않아 기한이 지나도 계속 쓰므로 직접 구독한다.
-Future<void> _writeWithin(Stream<List<int>> body, IOSink sink, Duration limit) {
+/// [body] 를 [file] 에 쓴다. 조각마다 디스크 쓰기가 끝날 때까지 수신을 멈춰(일시 중지), 빠른 네트워크 · 느린 저장소에서도
+/// 못 쓴 데이터가 메모리에 쌓이지 않는다. 쓰기 오류(저장 공간 부족 등)는 바로 받기 실패가 된다.
+/// [limit] 안에 끝나지 않으면 구독을 끊고 TimeoutException.
+Future<void> _writeWithin(
+  Stream<List<int>> body,
+  RandomAccessFile file,
+  Duration limit,
+) {
   final done = Completer<void>();
   late final StreamSubscription<List<int>> subscription;
-  final timer = Timer(limit, () {
+  void finish([Object? error, StackTrace? stack]) {
     if (done.isCompleted) return;
-    unawaited(subscription.cancel());
-    done.completeError(TimeoutException('본문을 기한 안에 다 받지 못함', limit));
-  });
-  // 디스크 쓰기 오류(저장 공간 부족 등)는 sink.add 가 아니라 sink.done 으로 온다. 처음부터 지켜보다 실패하면 받기를 멈춘다.
-  sink.done.then<void>(
-    (_) {},
-    onError: (Object e, StackTrace s) {
-      timer.cancel();
+    if (error != null) {
       unawaited(subscription.cancel());
-      if (!done.isCompleted) done.completeError(e, s);
-    },
+      done.completeError(error, stack);
+    } else {
+      done.complete();
+    }
+  }
+
+  final timer = Timer(
+    limit,
+    () => finish(TimeoutException('본문을 기한 안에 다 받지 못함', limit)),
   );
   subscription = body.listen(
-    sink.add,
+    (chunk) {
+      subscription.pause();
+      file
+          .writeFrom(chunk)
+          .then(
+            (_) {
+              if (!done.isCompleted) subscription.resume();
+            },
+            onError: (Object e, StackTrace s) {
+              timer.cancel();
+              finish(e, s);
+            },
+          );
+    },
     onError: (Object e, StackTrace s) {
       timer.cancel();
-      if (!done.isCompleted) done.completeError(e, s);
+      finish(e, s);
     },
     onDone: () {
       timer.cancel();
-      if (!done.isCompleted) done.complete();
+      finish();
     },
     cancelOnError: true,
   );
@@ -350,12 +368,12 @@ Future<DownloadOutcome> _download(
   // 받을 때마다 새 폴더에 둔다. 같은 이름의 지난 파일을 덮어쓰다 공유 중인 파일이 바뀌지 않게.
   final folder = await directory.createTemp('download-');
   final file = File('${folder.path}/$name');
-  final sink = file.openWrite();
+  final raf = await file.open(mode: FileMode.write);
   try {
-    await _writeWithin(_capped(body, maxFileBytes), sink, bodyTimeout);
-    await sink.close();
+    await _writeWithin(_capped(body, maxFileBytes), raf, bodyTimeout);
+    await raf.close();
   } catch (e) {
-    await sink.close().catchError((_) {});
+    await raf.close().then<void>((_) {}, onError: (_) {});
     // 반쯤 받은 파일은 남기지 않는다.
     await folder.delete(recursive: true).catchError((_) => folder);
     rethrow;
