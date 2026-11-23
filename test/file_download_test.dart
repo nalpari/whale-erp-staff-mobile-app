@@ -178,6 +178,15 @@ void main() {
             case '/to-login':
               res.redirect(Uri.parse('/login?next=/pay/1'));
               return;
+            case '/a/r1':
+              res.redirect(Uri.parse('b/r2')); // → /a/b/r2
+              return;
+            case '/a/b/r2':
+              res.redirect(Uri.parse('../login')); // → /a/login
+              return;
+            case '/a/login':
+              res.headers.contentType = ContentType.html;
+              res.write('<html>login</html>');
             case '/cross':
               res.redirect(
                 Uri.parse('http://localhost:${other.port}/file.pdf'),
@@ -240,6 +249,27 @@ void main() {
         expect(outcome, isA<DownloadedFile>());
         expect(seenCookies, ['access=1; refresh=2']);
         expect(otherCookies, [null]);
+      });
+
+      test('지난 받기를 지울 때 download-* 폴더만 지우고 다른 것은 남긴다', () async {
+        final keepDir = Directory('${dir.path}/other-dir')..createSync();
+        final keepFile = File('${keepDir.path}/keep.txt')
+          ..writeAsStringSync('x');
+        final lookalike = File('${dir.path}/download-note.txt')
+          ..writeAsStringSync('x');
+        await downloadFile(at('/pdf'), directory: dir, fallbackName: 'f');
+        await downloadFile(at('/pdf'), directory: dir, fallbackName: 'f');
+        expect(keepFile.existsSync(), isTrue);
+        expect(lookalike.existsSync(), isTrue);
+      });
+
+      test('리다이렉트가 여러 번이면 직전 주소를 기준으로 상대 주소를 푼다', () async {
+        final outcome = await downloadFile(
+          at('/a/r1'),
+          directory: dir,
+          fallbackName: 'f',
+        );
+        expect((outcome as OpenInWebView).url.path, '/a/login');
       });
 
       test('받을 때마다 지난 download-* 폴더를 지운다', () async {

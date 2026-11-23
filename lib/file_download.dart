@@ -160,13 +160,18 @@ Future<DownloadOutcome> downloadFile(
 
 /// 지난번에 받은 파일(`download-*` 폴더)을 지운다. 급여 PDF 가 임시 폴더에 쌓이지 않게. 공유 시트는 파일을 자기 캐시로
 /// 복사해 가므로 지난 파일을 지워도 된다. 지우지 못하면 넘어간다.
+/// [directory] 는 앱 전체가 같이 쓰는 임시 폴더라, 우리가 만든 `download-*` 폴더만 지운다.
 Future<void> _removeOldDownloads(Directory directory) async {
-  if (!await directory.exists()) return;
-  await for (final entry in directory.list()) {
-    final name = entry.uri.pathSegments.where((s) => s.isNotEmpty).last;
-    if (entry is Directory && name.startsWith('download-')) {
-      await entry.delete(recursive: true).catchError((_) => entry);
+  try {
+    if (!await directory.exists()) return;
+    await for (final entry in directory.list()) {
+      final name = entry.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      if (entry is Directory && name.startsWith('download-')) {
+        await entry.delete(recursive: true).catchError((_) => entry);
+      }
     }
+  } catch (_) {
+    // 정리에 실패해도 받기는 계속한다.
   }
 }
 
@@ -180,14 +185,17 @@ Future<DownloadOutcome> _download(
   required Duration timeout,
   required Duration idleTimeout,
 }) async {
-  final request = await client.getUrl(url).timeout(timeout);
-  if (cookie != null && cookie.isNotEmpty) {
-    request.headers.set(HttpHeaders.cookieHeader, cookie);
-  }
-  if (userAgent != null) {
-    request.headers.set(HttpHeaders.userAgentHeader, userAgent);
-  }
-  final response = await request.close().timeout(timeout);
+  // 연결부터 응답 헤더(리다이렉트 포함)까지를 한 번의 [timeout] 으로 묶는다.
+  final response = await () async {
+    final request = await client.getUrl(url);
+    if (cookie != null && cookie.isNotEmpty) {
+      request.headers.set(HttpHeaders.cookieHeader, cookie);
+    }
+    if (userAgent != null) {
+      request.headers.set(HttpHeaders.userAgentHeader, userAgent);
+    }
+    return request.close();
+  }().timeout(timeout);
   final status = response.statusCode;
   final contentType = response.headers.value(HttpHeaders.contentTypeHeader);
   final disposition = response.headers.value('content-disposition');

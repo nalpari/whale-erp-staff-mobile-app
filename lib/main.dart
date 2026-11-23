@@ -307,6 +307,9 @@ class _WebScreenState extends State<WebScreen> {
   bool _downloading = false;
   // 웹뷰의 이동 · 받기를 앱이 가로챈 때. 바로 뒤 오는 main frame 오류는 가로채기 때문이라 오류 화면을 띄우지 않는다.
   DateTime? _interceptedAt;
+  // 직전에 로그인 화면 등으로 웹뷰에 넘긴 받기. 같은 받기가 곧바로 또 화면을 받으면(앱이 읽은 쿠키가 웹뷰와 어긋남)
+  // 로그인 → 받기 → 로그인이 사람 손 없이 되풀이되므로 끊는다.
+  ({Uri url, DateTime at})? _lastOpenInWebView;
 
   bool _justIntercepted() {
     final at = _interceptedAt;
@@ -430,7 +433,22 @@ class _WebScreenState extends State<WebScreen> {
           // 접속이 끝나 로그인 화면이 온 경우 등. HTML 이 온 최종 주소(로그인 · 상세)를 연다. 웹이 로그인 뒤 돌려보낸다.
           // 쿠키를 싣는 같은 출처 받기에서만 이렇게 한다. S3 등 다른 곳의 HTML 은 받기 실패로 본다
           // (그 주소를 다시 열면 같은 가로채기로 되풀이된다).
-          if (withCookies && isTrustedOrigin(page.origin, _base)) {
+          final last = _lastOpenInWebView;
+          final repeated =
+              last != null &&
+              last.url == url &&
+              DateTime.now().difference(last.at) < const Duration(seconds: 15);
+          if (repeated) {
+            _lastOpenInWebView = null;
+            fail(
+              StateError('받기가 화면으로 되풀이됨: $page'),
+              null,
+              message: '로그인 정보를 확인하지 못했어요. 앱을 다시 열고 시도해 주세요.',
+            );
+          } else if (withCookies && isTrustedOrigin(page.origin, _base)) {
+            _lastOpenInWebView = (url: url, at: DateTime.now());
+            // 웹뷰가 이 화면을 여는 데 생긴 오류는 연결 실패 화면으로 보여야 하므로 가로채기 창을 닫는다.
+            _interceptedAt = null;
             await _controller?.loadUrl(
               urlRequest: URLRequest(url: WebUri.uri(page)),
             );
