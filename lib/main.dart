@@ -377,9 +377,12 @@ class _WebScreenState extends State<WebScreen> {
       String context = '파일을 받지 못함',
       String message = downloadFailedMessage,
     }) {
+      // 예외 글에 S3 서명 주소가 들어 있을 수 있어 쿼리를 지우고 남긴다.
       FlutterError.reportError(
         FlutterErrorDetails(
-          exception: error,
+          exception: StateError(
+            '${error.runtimeType}: ${redactUrls(error.toString())}',
+          ),
           stack: stack,
           library: 'main',
           context: ErrorDescription(context),
@@ -415,7 +418,15 @@ class _WebScreenState extends State<WebScreen> {
           _downloading = false;
           try {
             await SharePlus.instance.share(
-              ShareParams(files: [XFile(path, mimeType: mimeType)]),
+              ShareParams(
+                files: [XFile(path, mimeType: mimeType)],
+                // iPad 에서는 공유 창(팝오버)을 띄울 기준 위치가 있어야 한다. 화면 가운데를 준다.
+                sharePositionOrigin: Rect.fromCenter(
+                  center: MediaQuery.sizeOf(context).center(Offset.zero),
+                  width: 1,
+                  height: 1,
+                ),
+              ),
             );
           } catch (e, s) {
             fail(

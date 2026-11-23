@@ -192,6 +192,17 @@ void main() {
                 Uri.parse('http://localhost:${other.port}/file.pdf'),
               );
               return;
+            case '/same-host':
+              // 호스트는 같고 포트만 다르다. HttpClient 자동 리다이렉트는 이때 쿠키를 떼지 않는다.
+              res.redirect(
+                Uri.parse(
+                  'http://${server.address.host}:${other.port}/file.pdf',
+                ),
+              );
+              return;
+            case '/loop':
+              res.redirect(Uri.parse('/loop'));
+              return;
             case '/stall-headers':
               return; // 답하지 않는다.
             case '/stall-body':
@@ -249,6 +260,39 @@ void main() {
         expect(outcome, isA<DownloadedFile>());
         expect(seenCookies, ['access=1; refresh=2']);
         expect(otherCookies, [null]);
+      });
+
+      test('같은 호스트의 다른 포트로 리다이렉트해도 쿠키를 떼고 넘긴다', () async {
+        final outcome = await downloadFile(
+          at('/same-host'),
+          directory: dir,
+          fallbackName: 'f',
+          cookie: 'access=1; refresh=2',
+        );
+        expect(outcome, isA<DownloadedFile>());
+        expect(seenCookies, ['access=1; refresh=2']);
+        expect(otherCookies, [null]);
+      });
+
+      test('같은 출처 안의 리다이렉트는 쿠키를 그대로 싣는다', () async {
+        final outcome = await downloadFile(
+          at('/redirect'),
+          directory: dir,
+          fallbackName: 'f',
+          cookie: 'access=1',
+        );
+        expect(outcome, isA<DownloadedFile>());
+        expect(seenCookies, ['access=1', 'access=1']);
+      });
+
+      test('리다이렉트가 끝없이 이어지면 실패로 끝낸다', () async {
+        final outcome = await downloadFile(
+          at('/loop'),
+          directory: dir,
+          fallbackName: 'f',
+        );
+        expect(outcome, isA<DownloadFailed>());
+        expect(seenCookies.length, maxDownloadRedirects + 1);
       });
 
       test('지난 받기를 지울 때 download-* 폴더만 지우고 다른 것은 남긴다', () async {
@@ -379,5 +423,35 @@ void main() {
         );
       });
     });
+  });
+
+  test('같은 출처는 스킴 · 호스트 · 포트가 모두 같을 때만', () {
+    final base = Uri.parse('https://staff-dev.whaleerp.co.kr/pay/1');
+    expect(
+      isSameOrigin(Uri.parse('https://staff-dev.whaleerp.co.kr:443/x'), base),
+      isTrue,
+    );
+    expect(
+      isSameOrigin(Uri.parse('https://staff-dev.whaleerp.co.kr:8443/x'), base),
+      isFalse,
+    );
+    expect(
+      isSameOrigin(Uri.parse('http://staff-dev.whaleerp.co.kr/x'), base),
+      isFalse,
+    );
+    expect(
+      isSameOrigin(Uri.parse('https://a.staff-dev.whaleerp.co.kr/x'), base),
+      isFalse,
+    );
+  });
+
+  test('오류 기록에서 주소의 쿼리(서명 값)를 지운다', () {
+    expect(
+      redactUrls(
+        'HttpException: 응답 503, uri = https://b.s3.ap-northeast-2.amazonaws.com/c.pdf?X-Amz-Signature=abc&X-Amz-Credential=k 뒤',
+      ),
+      'HttpException: 응답 503, uri = https://b.s3.ap-northeast-2.amazonaws.com/c.pdf?… 뒤',
+    );
+    expect(redactUrls('쿼리 없는 https://a.b/c'), '쿼리 없는 https://a.b/c');
   });
 }

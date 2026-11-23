@@ -175,6 +175,19 @@ Future<void> _removeOldDownloads(Directory directory) async {
   }
 }
 
+/// 파일 받기에서 따라갈 리다이렉트 수. HttpClient 기본값과 같다.
+const maxDownloadRedirects = 5;
+
+/// 두 주소가 같은 출처(스킴 · 호스트 · 포트)인지. [Uri.port] 는 생략된 포트를 기본 포트로 본다.
+bool isSameOrigin(Uri a, Uri b) =>
+    a.scheme == b.scheme && a.host == b.host && a.port == b.port;
+
+/// 오류 기록용 글. 주소의 쿼리(S3 서명 값 등)를 지운다. 서명 주소가 남으면 만료 전까지 파일을 받을 수 있다.
+String redactUrls(String text) => text.replaceAllMapped(
+  RegExp(r'(https?://[^\s?#]+)[?#][^\s]*'),
+  (m) => '${m[1]}?…',
+);
+
 Future<DownloadOutcome> _download(
   HttpClient client,
   Uri url, {
@@ -186,26 +199,38 @@ Future<DownloadOutcome> _download(
   required Duration idleTimeout,
 }) async {
   // 연결부터 응답 헤더(리다이렉트 포함)까지를 한 번의 [timeout] 으로 묶는다.
+  // 리다이렉트는 직접 따라간다. HttpClient 의 자동 리다이렉트는 호스트가 바뀔 때만 쿠키를 떼서, 같은 호스트의
+  // 다른 포트 · http 로 가면 로그인 쿠키가 따라간다. 쿠키는 처음 주소와 같은 출처(스킴 · 호스트 · 포트)에만 싣는다.
+  var finalUrl = url;
   final response = await () async {
-    final request = await client.getUrl(url);
-    if (cookie != null && cookie.isNotEmpty) {
-      request.headers.set(HttpHeaders.cookieHeader, cookie);
+    for (var redirects = 0; ; redirects++) {
+      final request = await client.getUrl(finalUrl);
+      request.followRedirects = false;
+      if (cookie != null && cookie.isNotEmpty && isSameOrigin(finalUrl, url)) {
+        request.headers.set(HttpHeaders.cookieHeader, cookie);
+      }
+      if (userAgent != null) {
+        request.headers.set(HttpHeaders.userAgentHeader, userAgent);
+      }
+      final response = await request.close();
+      final location = response.headers.value(HttpHeaders.locationHeader);
+      if (!response.isRedirect || location == null) return response;
+      await response.drain<void>();
+      if (redirects >= maxDownloadRedirects) {
+        throw const HttpException('파일 받기 리다이렉트가 너무 많음');
+      }
+      final next = finalUrl.resolve(location);
+      if (next.scheme != 'https' && next.scheme != 'http') {
+        throw HttpException('지원하지 않는 리다이렉트 스킴 ${next.scheme}');
+      }
+      finalUrl = next;
     }
-    if (userAgent != null) {
-      request.headers.set(HttpHeaders.userAgentHeader, userAgent);
-    }
-    return request.close();
   }().timeout(timeout);
   final status = response.statusCode;
   final contentType = response.headers.value(HttpHeaders.contentTypeHeader);
   final disposition = response.headers.value('content-disposition');
   // 본문은 전체 시간이 아니라 데이터가 끊긴 시간으로 끊는다.
   final body = response.timeout(idleTimeout);
-  // 리다이렉트마다 직전 주소를 기준으로 상대 주소를 푼다.
-  var finalUrl = url;
-  for (final redirect in response.redirects) {
-    finalUrl = finalUrl.resolveUri(redirect.location);
-  }
 
   if (isMessageResponse(status, contentType)) {
     final text = (await utf8.decodeStream(body)).trim();
@@ -219,7 +244,8 @@ Future<DownloadOutcome> _download(
   if (status != 200) {
     // 502 · 504 같은 HTML 오류 페이지도 여기로 온다. 웹뷰로 넘기면 오류 페이지가 화면을 덮는다.
     await body.drain<void>();
-    return DownloadFailed(HttpException('응답 $status', uri: url));
+    // 주소는 담지 않는다. S3 서명 주소가 오류 기록에 남으면 만료 전까지 계약서를 받을 수 있다.
+    return DownloadFailed(HttpException('응답 $status'));
   }
 
   final name = fileNameFrom(disposition, finalUrl, fallbackName);
