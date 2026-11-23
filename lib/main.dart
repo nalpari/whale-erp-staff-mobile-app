@@ -374,6 +374,14 @@ class _WebScreenState extends State<WebScreen> {
     _interceptedUrl = url;
     if (_downloading) return;
     _downloading = true;
+    // 이 받기가 잡은 잠금만 한 번 푼다. 공유 직전에 풀고 finally 에서 또 풀면, 그 사이 시작된 다음 받기의 잠금까지 풀린다.
+    var released = false;
+    void release() {
+      if (released) return;
+      released = true;
+      _downloading = false;
+    }
+
     final messenger = ScaffoldMessenger.of(context);
     messenger.removeCurrentSnackBar();
     messenger.showSnackBar(
@@ -423,7 +431,7 @@ class _WebScreenState extends State<WebScreen> {
       switch (outcome) {
         case DownloadedFile(:final path, :final mimeType):
           // 공유 시트는 모달이라 중복 탭이 들어오지 않는다. 시트가 닫히지 않아도 다음 받기가 막히지 않게 먼저 푼다.
-          _downloading = false;
+          release();
           try {
             await SharePlus.instance.share(
               ShareParams(
@@ -482,7 +490,7 @@ class _WebScreenState extends State<WebScreen> {
       if (mounted) messenger.hideCurrentSnackBar();
       fail(e, s);
     } finally {
-      _downloading = false;
+      release();
     }
   }
 

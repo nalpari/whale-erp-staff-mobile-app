@@ -214,6 +214,15 @@ Future<void> _writeWithin(Stream<List<int>> body, IOSink sink, Duration limit) {
     unawaited(subscription.cancel());
     done.completeError(TimeoutException('본문을 기한 안에 다 받지 못함', limit));
   });
+  // 디스크 쓰기 오류(저장 공간 부족 등)는 sink.add 가 아니라 sink.done 으로 온다. 처음부터 지켜보다 실패하면 받기를 멈춘다.
+  sink.done.then<void>(
+    (_) {},
+    onError: (Object e, StackTrace s) {
+      timer.cancel();
+      unawaited(subscription.cancel());
+      if (!done.isCompleted) done.completeError(e, s);
+    },
+  );
   subscription = body.listen(
     sink.add,
     onError: (Object e, StackTrace s) {
