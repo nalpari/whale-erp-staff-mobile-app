@@ -241,8 +241,12 @@ Future<bool> allowGeolocation(
 /// (상태를 쓰는 쪽 한 곳에서만 바꾸게). 아무도 막지 않은 일반 `<dialog>` 만 앱이 직접 close() 한다.
 const closeTopDialogScript = '''
 (() => {
-  const opened = Array.from(document.querySelectorAll('dialog[open]'));
-  if (opened.length === 0) return false;
+  const all = Array.from(document.querySelectorAll('dialog[open]'));
+  if (all.length === 0) return false;
+  // 모달(showModal)은 일반 dialog(show) 위에 뜬다. 열린 모달이 있으면 모달 가운데서 고른다.
+  let modals = [];
+  try { modals = all.filter((d) => d.matches(':modal')); } catch (_) {}
+  const opened = modals.length > 0 ? modals : all;
   // 가장 나중에 연 시트가 맨 위다. 연 순서는 dialogOrderScript 가 남긴다(없으면 0). 같으면 DOM 에서 뒤의 것.
   const seq = (d) => Number(d.dataset.whaleOpenedAt || 0);
   const top = opened.reduce((a, b) => (seq(b) >= seq(a) ? b : a));
@@ -264,8 +268,11 @@ const dialogOrderScript = '''
     const original = proto[name];
     if (typeof original !== 'function') continue;
     proto[name] = function (...args) {
-      this.dataset.whaleOpenedAt = String(++window.__whaleDialogOrder);
-      return original.apply(this, args);
+      // 이미 열린 시트를 다시 열어도 브라우저는 맨 위로 올리지 않으므로, 닫혀 있다가 실제로 열렸을 때만 순서를 남긴다.
+      const wasOpen = this.open;
+      const result = original.apply(this, args);
+      if (!wasOpen && this.open) this.dataset.whaleOpenedAt = String(++window.__whaleDialogOrder);
+      return result;
     };
   }
 })();
