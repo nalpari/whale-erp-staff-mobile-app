@@ -509,6 +509,14 @@ void main() {
       ),
       isFalse,
     );
+    // WEB_URL 이 http 여도 로그인 쿠키를 싣는 가로채기는 하지 않는다.
+    expect(
+      isPayslipPdf(
+        Uri.parse('http://localhost:3000/pay/12/pdf'),
+        Uri.parse('http://localhost:3000'),
+      ),
+      isFalse,
+    );
   });
 
   test('S3 호스트만 계약서 서명 주소로 본다', () {
