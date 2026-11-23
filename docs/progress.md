@@ -33,7 +33,7 @@
 | 키보드 | 🟡 | `adjustResize`는 있다. 하단 sticky Dock이 가리는지 실기기 확인이 남았다 |
 | **위치 권한** | 🟡 | Android `ACCESS_FINE_LOCATION` · `ACCESS_COARSE_LOCATION`, iOS `NSLocationWhenInUseUsageDescription`(2026-11-20). 웹이 `navigator.geolocation`을 부르면 Android는 `onGeolocationPermissionsShowPrompt`에서 웹 주소와 같은 https 출처만 OS 권한(`geolocator`)을 물어 허락한다(`retain: false`, 페이지를 새로 불러올 때마다 OS 권한 재확인). 권한 확인 오류 · 60초 무응답은 거부하고 「다시 시도」 안내를 띄운다(60초에는 사용자가 권한 창을 보고 고민하는 시간도 들어간다. 알려진 한계). Android에서 이미 「대략적 위치」로 허락돼 있으면 앱을 켠 동안 한 번 정확한 위치로 바꿀지 다시 묻고(방금 창에서 대략적을 골랐으면 그 자리에서는 다시 묻지 않음, 재요청이 실패하면 대략적 위치 그대로), 대략적 위치 · 영구 거부 · 기기 위치 꺼짐이면 설정으로 가는 안내(SnackBar)를 띄운다. 스플래시 중에 나온 안내는 첫 페이지가 그려진 뒤 띄운다. 에뮬레이터에서 확인 창이 OS 것 하나만 뜨고, 허용하면 좌표, 거부하면 웹이 `PERMISSION_DENIED`를 받는 것을 확인. 남은 일: iOS는 이 콜백이 없어 출처 검사가 적용되지 않고(WKWebView가 직접 처리), OS 권한 창과 사이트 확인 창이 따로 뜰 수 있다. iOS는 시뮬레이터 빌드만 확인했고 실기기에서 창이 몇 번 뜨는지 봐야 한다. 정확한 위치 재요청 창과 안내는 테스트로만 확인했고 에뮬레이터 · 실기기에서는 아직 못 봤다 |
 | 위치 측정 · 조작 감지 (결정 8) | 🟡 | 앱 쪽 브리지 기능 `measureLocation`이 생겼다(2026-11-23, `lib/location_reading.dart`). 권한 확인 → 새 측정 → 좌표 · 정확도 · `mocked` · `precise`를 한 번에 돌려준다. 에뮬레이터에서 실제 위치는 `mocked: false`, 셸 테스트 제공자로 넣은 모의 위치는 `mocked: true`로 확인. **남은 일: 웹 `check-in-screen.tsx`가 앱 안이면 이 값을 쓰게 하기** |
-| 파일 받기 (급여 PDF · 계약서) | ❌ | 두 경로를 따로 처리해야 한다. 급여 PDF는 같은 호스트 attachment라 `onDownloadStartRequest`로 받되 웹뷰 쿠키를 실어야 한다. 계약서는 S3 서명 주소로 302 리다이렉트돼서, **지금은 `isInApp`이 외부 브라우저로 내보낸다**. 둘 다 받은 뒤 공유 시트 |
+| 파일 받기 (급여 PDF · 계약서) | 🟡 | 앱이 받아 공유 시트로 연다(2026-11-23, `lib/file_download.dart`). 급여 PDF는 `onDownloadStarting`에서 웹 주소와 같은 출처일 때만 웹뷰 쿠키를 실어 받는다. 계약서는 `shouldOverrideUrlLoading`에서 S3 서명 주소(https · `*.amazonaws.com` · 서명 값)로 가는 이동을 막고 쿠키 없이 받는다. 실패 글자(text/plain)는 그대로 안내, 화면(HTML, 로그인 등)이 오면 웹뷰에서 연다. 에뮬레이터에서 S3 주소 가로채기(바깥 브라우저로 안 나감 · 실패 안내)만 확인. **로그인한 실제 급여 PDF · 계약서 받기와 공유 시트는 테스트 계정이 없어 못 봤다** |
 | 쿠키 유지 (자동 로그인 30일 / 7일) | 🟡 | 기본 동작에 맡겨 둔 상태. 앱을 백그라운드로 보낼 때 `CookieManager.flush()`를 부르지 않는다. 앱을 강제 종료한 뒤 로그인이 남는지 확인하지 않았다 |
 | 기기 식별자 | ❌ | 네이티브 ID를 넘기는 핸들러가 없다 |
 | 딥링크 (`/invite` · `/password-reset/link` · `/affiliations`) | ❌ | intent-filter · Associated Domains가 없다. 알림톡 버튼(카카오톡 인앱 브라우저)에서 앱이 뜨는지도 실기기로 봐야 한다. 번들 ID를 확정해야 시작할 수 있다 |
@@ -49,7 +49,7 @@
 | viewport (`viewportFit`, `themeColor`) | ❌ | `src/app/layout.tsx`에 `export const viewport`가 없다. 앱은 Flutter `SafeArea`가 노치를 피하므로 급하지는 않다 |
 | 웹뷰 감지 · 브리지 모듈 | 🟡 | 앱 쪽 브리지는 생겼다(2026-11-20, 약속은 [native-bridge.md](native-bridge.md)). 웹 `src/lib/native-bridge.ts`(앱 감지 · 준비 대기 · 10초 시간 제한 · 답 검사)는 웹 PR #87로 올라가 머지를 기다린다(2026-11-23). 아직 이 모듈을 쓰는 웹 화면은 없다 |
 | 위치 조작 감지 연결 | ❌ | `check-in-screen.tsx`가 아직 `mocked: false`로 고정돼 있다 |
-| 다운로드 · 뒤로 가기 브리지 | ❌ | 없음. 급여 PDF 라우트(`pay/[payslipId]/pdf/route.ts`)는 실패하면 평문 글자를 돌려줘 앱 화면을 덮을 수 있다. 계약서 라우트처럼 상세로 돌려보내게 바꾸는 것을 검토 |
+| 다운로드 · 뒤로 가기 브리지 | ❌ | 다운로드는 브리지 없이 앱이 가로채 받게 했다(위 「파일 받기」, 웹 변경 없음). 뒤로 가기 브리지는 없다. 급여 PDF 라우트(`pay/[payslipId]/pdf/route.ts`)는 실패하면 평문 글자를 돌려준다 — 앱 안에서는 앱이 그 글자를 안내로 띄워 화면을 덮지 않지만, 브라우저에서는 여전히 덮는다. 계약서 라우트처럼 상세로 돌려보내게 바꾸는 것을 검토 |
 | `assetlinks.json` · `apple-app-site-association` | ❌ | `public/`에 없다. 번들 ID를 확정한 뒤에 만든다 |
 
 ### 스토어 심사 · 정책
@@ -71,7 +71,7 @@
 3. **위치 권한 (2단계)**: 코드는 들어갔다(2026-11-20). Android는 허용 · 거부 경로만 에뮬레이터에서 확인했고, 정확한 위치 재요청 창과 설정 안내는 아직 못 봤다. iOS는 실기기 확인이 남았다. 웹 geolocation으로 출퇴근 화면을 지금 앱 안에서 테스트할 수 있다. iOS WKWebView는 OS 권한과 별도로 사이트 위치 확인 창을 띄울 수 있어, 실기기에서 몇 번 뜨는지 본다(5번 네이티브 측정으로 바뀌면 사라진다)
 4. **JS 브리지 골격**: 앱 쪽은 끝났다(2026-11-20). `lib/native_bridge.dart`가 `WEB_URL`과 같은 출처(https · 호스트 · 포트)의 맨 위 화면 호출만 받고, 답은 `{ok, data}` / `{ok: false, error}` 하나로 맞췄다. 첫 기능은 `appInfo`. 약속은 [native-bridge.md](native-bridge.md). 웹 쪽 `native-bridge.ts`는 웹 PR #87(머지 대기)이고, 약속 문서를 웹에 맞춰 고쳤다(2026-11-23: `data` 칸 필수, 웹은 호출마다 10초까지 기다림, User-Agent 표식 위치, Android 준비 표시). `measureLocation`은 예외로 웹이 75초 기다린다(5번)
 5. **위치 측정 · 조작 감지**: 앱 쪽은 끝났다(2026-11-23, 브리지 `measureLocation`, 약속은 [native-bridge.md](native-bridge.md)). **남은 일: 웹** — `native-bridge.ts`에 `measureLocation` 감싸기(기다리는 시간 75초), `check-in-screen.tsx`의 `locate`가 앱 안이면 `navigator.geolocation` 대신 이 값으로 좌표와 `mocked`를 채우기(웹 PR #87 머지 뒤). iOS 모의 위치는 실기기에서 확인한다. 실기기에서 Android 「위치 정확도 켜기」 창이 측정 중 뜨는지도 본다. 브리지는 웹뷰 설정으로 웹 주소의 맨 위 화면에만 심는다(Android iframe 위조 방지. 2026-11-23 에뮬레이터에서 맨 위 화면은 appInfo · measureLocation 성공, 같은 출처 iframe에는 callHandler가 없음을 확인)
-6. **파일 받기**: 급여 PDF는 `onDownloadStartRequest`에서 웹뷰 쿠키를 실어 받고, 계약서는 S3 호스트로 가는 이동을 가로채 받는다. 둘 다 저장 후 공유 시트
+6. **파일 받기**: 앱 쪽은 끝났다(2026-11-23). 웹 변경 없이 앱이 가로채 받는다(계획 결정 10의 「브리지로」 대신 가로채기, 1절 2026-11-19 확인 방식). 남은 일: 테스트 계정으로 실제 급여 PDF · 계약서를 받아 공유 시트까지 실기기 · 에뮬레이터 확인
 7. 3단계 이후(딥링크 · 푸시 · 강제 업데이트)는 번들 ID 확정과 api 팀 협의가 먼저다. 협의 일정을 잡아 둔다
 
 ## 분석 기록
@@ -106,3 +106,4 @@
 - 2026-11-23 · `9a56fc1` · PR #4 pr-agent 재리뷰 반영. 권한 확인을 시작하고 58초(`permissionAskWindow`)가 지나면 권한 창(처음 요청 · 정확한 위치 재요청)을 새로 띄우지 않음. 웹에 시간 초과로 답한 뒤 창이 늦게 뜨던 경로를 막음. 같은 출처 iframe은 앱에서 구분할 수 없어 `docs/native-bridge.md`에 웹이 지킬 약속(믿을 수 없는 콘텐츠는 다른 출처나 sandbox로)으로 적음. 테스트 2개 추가(65개)
 - 2026-11-23 · `b268d50` · PR #4 pr-agent 재리뷰 반영. 대략적 위치만 허락되면 새 위치를 기다리지 않고 운영체제가 준 첫 위치를 씀(`readAnyPosition`, Android는 대략적 위치를 최대 10분에 한 번 새로 만들어 신선도 기준을 쓰면 매번 시간 초과). ok 결과에 위치 나이 `ageSeconds`를 더해 웹이 판단하게 함. 테스트 2개 추가(67개), 에뮬레이터에서 정확한 위치 경로 확인
 - 2026-11-23 · `df05ee3` · PR #4 pr-agent 재리뷰 반영. 대략적 위치 경로로 읽은 좌표는 그 뒤 정확한 위치를 허락해도 `precise: false`로 보냄(잰 뒤 정확도 설정만 다시 읽어 true 가 붙던 경로). 테스트 갱신(67개)
+- 2026-11-23 · `ae3e17d` · 파일 받기. `lib/file_download.dart`(S3 서명 주소 판별, Content-Disposition 파일 이름, 받기 · 저장), 급여 PDF는 `onDownloadStarting`에서 같은 출처만 쿠키 싣고, 계약서는 S3 이동을 가로채 받아 `share_plus` 공유 시트. `path_provider` · `share_plus` 추가. 받기 테스트는 실제 HttpClient 때문에 `test/file_download_test.dart`로 따로

@@ -6,8 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'file_download.dart';
 import 'location_reading.dart';
 import 'native_bridge.dart';
 
@@ -300,6 +303,8 @@ class _WebScreenState extends State<WebScreen> {
   bool _failed = false;
   bool _loaded = false;
   bool _splashGone = false;
+  // 파일을 받는 중이면 또 누른 것은 무시한다(같은 파일을 두 번 받아 공유 시트가 겹치지 않게).
+  bool _downloading = false;
   // 시간 제한이 지난 뒤 온 요청은 권한을 새로 요청한다. 앞 요청을 기다리게 하면 안 된다:
   // geolocator(Android)는 권한 창이 취소되면(빈 결과) 앞 요청을 영영 끝내지 않아 앱을 다시 켤 때까지
   // 위치를 못 쓴다. 새 요청은 앞 요청의 결과 콜백을 덮어쓰므로, 창이 아직 떠 있었다면 그 창의 결과는
@@ -337,6 +342,83 @@ class _WebScreenState extends State<WebScreen> {
 
   Future<bool> _ensureLocationPermission() async =>
       (await _ensureLocationAccess()).allowsWeb;
+
+  /// 웹뷰 대신 앱이 파일을 받아 공유 시트로 연다. [withCookies] 면 웹뷰 쿠키(로그인)를 싣는다(같은 호스트의 급여 PDF).
+  Future<void> _receiveFile(
+    Uri url, {
+    required bool withCookies,
+    required String fallbackName,
+  }) async {
+    if (_downloading) return;
+    _downloading = true;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('파일을 받는 중이에요…'),
+        duration: downloadTimeout,
+      ),
+    );
+    void fail(Object error, StackTrace? stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'main',
+          context: ErrorDescription('파일을 받지 못함'),
+        ),
+      );
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(downloadFailedMessage),
+          showCloseIcon: true,
+        ),
+      );
+    }
+
+    try {
+      String? cookie;
+      if (withCookies) {
+        final cookies = await CookieManager.instance().getCookies(
+          url: WebUri.uri(url),
+        );
+        cookie = cookies.map((c) => '${c.name}=${c.value}').join('; ');
+      }
+      final outcome = await downloadFile(
+        url,
+        directory: await getTemporaryDirectory(),
+        fallbackName: fallbackName,
+        cookie: cookie,
+        userAgent: appUserAgent(widget.version),
+      );
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      switch (outcome) {
+        case DownloadedFile(:final path, :final mimeType):
+          await SharePlus.instance.share(
+            ShareParams(files: [XFile(path, mimeType: mimeType)]),
+          );
+        case DownloadMessage(:final message):
+          messenger.showSnackBar(
+            SnackBar(content: Text(message), showCloseIcon: true),
+          );
+        case OpenInWebView():
+          // 접속이 끝나 로그인 화면이 온 경우 등. 웹뷰가 그 주소를 열면 웹이 로그인 뒤 상세로 돌려보낸다.
+          await _controller?.loadUrl(
+            urlRequest: URLRequest(url: WebUri.uri(url)),
+          );
+        case DownloadFailed(:final error):
+          fail(error, null);
+      }
+    } catch (e, s) {
+      if (mounted) {
+        messenger.hideCurrentSnackBar();
+        fail(e, s);
+      }
+    } finally {
+      _downloading = false;
+    }
+  }
 
   void _showLocationGuide(LocationGuide guide) {
     final messenger = ScaffoldMessenger.of(context);
@@ -428,6 +510,31 @@ class _WebScreenState extends State<WebScreen> {
                         javaScriptBridgeForMainFrameOnly: true,
                       ),
                       pullToRefreshController: _refresh,
+                      // 급여 PDF 「명세서 내보내기」(download 링크, attachment). 웹뷰는 파일을 받지 않으므로 앱이 웹뷰 쿠키를
+                      // 실어 받는다. S3 서명 주소는 쿠키 없이 받는다. 그 밖의 다운로드는 무시한다.
+                      onDownloadStarting: (controller, request) {
+                        final url = request.url;
+                        // 쿠키(로그인)를 싣는 곳은 웹 주소와 같은 출처(https · 호스트 · 포트)뿐이다. http 로는 보내지 않는다.
+                        if ((url.scheme == 'https' || url.scheme == 'http') &&
+                            isTrustedOrigin(url.origin, _base)) {
+                          unawaited(
+                            _receiveFile(
+                              url,
+                              withCookies: true,
+                              fallbackName: '급여명세서.pdf',
+                            ),
+                          );
+                        } else if (isSignedDownload(url)) {
+                          unawaited(
+                            _receiveFile(
+                              url,
+                              withCookies: false,
+                              fallbackName: '근로계약서',
+                            ),
+                          );
+                        }
+                        return null;
+                      },
                       onWebViewCreated: (controller) {
                         _controller = controller;
                         _bridge.attach(controller);
@@ -457,6 +564,18 @@ class _WebScreenState extends State<WebScreen> {
                             !action.isForMainFrame ||
                             isInApp(uri, _base)) {
                           return NavigationActionPolicy.ALLOW;
+                        }
+                        // 근로계약서 받기: 같은 호스트 라우트가 S3 서명 주소로 302 이동한다. 바깥 브라우저로 내보내지 않고
+                        // 앱이 받아 공유 시트로 연다. 서명 주소가 곧 권한이라 쿠키는 싣지 않는다.
+                        if (isSignedDownload(uri)) {
+                          unawaited(
+                            _receiveFile(
+                              uri,
+                              withCookies: false,
+                              fallbackName: '근로계약서',
+                            ),
+                          );
+                          return NavigationActionPolicy.CANCEL;
                         }
                         await launchUrl(
                           uri,
