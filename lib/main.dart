@@ -1,9 +1,15 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'location_reading.dart';
+import 'native_bridge.dart';
 
 // TODO: 운영 주소는 https://staff.whaleerp.co.kr 이다. 도메인이 열리면(2026-11-19 현재 DNS 미등록) 기본값을 운영으로 바꾼다.
 // 그 전까지 기본값은 dev 이고, 다른 주소는 --dart-define=WEB_URL=... 로 넘긴다.
@@ -29,43 +35,6 @@ bool isInApp(Uri uri, Uri base) {
       uri.host == base.host;
 }
 
-/// 웹이 위치를 물어도 되는 출처인지. 웹 주소와 같은 출처(https · 호스트 · 포트)만 허락한다.
-/// 같은 호스트라도 포트가 다르면 다른 서비스일 수 있어 거부한다. [Uri.port] 는 생략된 포트를 443 으로 본다.
-bool isTrustedOrigin(String origin, Uri base) {
-  final uri = Uri.tryParse(origin);
-  return uri != null &&
-      uri.scheme == 'https' &&
-      base.scheme == 'https' &&
-      uri.host.isNotEmpty &&
-      uri.host == base.host &&
-      uri.port == base.port;
-}
-
-/// 위치를 쓸 수 있는 상태. 웹의 위치 요청을 허락할지와 사용자에게 띄울 안내를 정한다.
-enum LocationAccess {
-  /// 정확한 위치까지 허락.
-  precise,
-
-  /// 「대략적 위치」만 허락(Android 12+). 좌표가 km 단위로 흐려져 근무지 판정이 틀릴 수 있다.
-  approximate,
-
-  /// 권한은 허락인데 기기 위치(위치 서비스)가 꺼져 있다. 웹은 좌표를 받지 못한다.
-  serviceDisabled,
-
-  /// 거부(다시 물을 수 있음) · 판단 불가.
-  denied,
-
-  /// 영구 거부. OS 가 더는 창을 띄우지 않아 설정에서만 바꿀 수 있다.
-  deniedForever,
-
-  /// 권한을 확인하다 오류가 나거나 시간이 넘었다. 사용자가 거부한 것이 아니므로 다시 시도하라고 안내한다.
-  failed;
-
-  /// 웹뷰에 위치를 허락할지. 권한이 있으면 허락하고, 좌표 품질 문제는 안내로 알린다.
-  bool get allowsWeb =>
-      this == precise || this == approximate || this == serviceDisabled;
-}
-
 /// OS 위치 권한(앱 사용 중)을 확인하고, 허락되지 않았지만 다시 물을 수 있으면(denied) 묻는다.
 /// 이미 「대략적 위치」로 허락돼 있으면 [askPrecise] 일 때 한 번 더 물어 정확한 위치로 바꿀 기회를 준다
 /// (Android 는 FINE 을 다시 요청하면 「정확한 위치로 변경」 창을 띄운다). 사용자가 이번 창에서 방금
@@ -87,7 +56,15 @@ Future<LocationAccess> ensureLocationAccess({
   bool askPrecise = true,
   VoidCallback? onAskPrecise,
   Duration timeout = const Duration(seconds: 60),
+  Duration askWithin = permissionAskWindow,
+  DateTime Function() now = DateTime.now,
+  bool? onIOS,
 }) async {
+  final isIOS = onIOS ?? defaultTargetPlatform == TargetPlatform.iOS;
+  // 권한 창(처음 요청 · 정확한 위치 재요청)은 확인을 시작하고 [askWithin] 안에서만 새로 띄운다. 그 뒤에는 부르는 쪽
+  // (measureLocation 의 permissionTimeLimit)이 이미 시간 초과로 답했을 수 있어, 늦게 뜬 창이 웹 결과와 어긋난다.
+  final startedAt = now();
+  bool mayAsk() => now().difference(startedAt) < askWithin;
   Future<T> guarded<T>(
     Future<T> Function() call,
     T fallback,
@@ -134,6 +111,15 @@ Future<LocationAccess> ensureLocationAccess({
     null,
     '위치 권한을 확인하지 못해 웹의 위치 요청을 거부함',
   );
+  if (current == LocationPermission.denied && !mayAsk()) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: TimeoutException('권한 확인이 늦게 끝나 권한 창을 띄우지 않음', askWithin),
+        library: 'main',
+      ),
+    );
+    return LocationAccess.failed;
+  }
   final justAsked = current == LocationPermission.denied;
   final permission = justAsked
       ? await guarded<LocationPermission?>(
@@ -143,6 +129,12 @@ Future<LocationAccess> ensureLocationAccess({
         )
       : current;
   final notGranted = blocked(permission);
+  if (notGranted == LocationAccess.deniedForever &&
+      isIOS &&
+      !await guarded(serviceEnabled, true, '위치 서비스 상태를 읽지 못해 켜진 것으로 봄')) {
+    // iOS 는 기기 위치를 전부 끄면 권한이 denied(→ deniedForever)로 보인다. 그때는 위치를 켜라고 안내한다.
+    return LocationAccess.serviceDisabled;
+  }
   if (notGranted != null) return notGranted;
 
   if (!await guarded(serviceEnabled, true, '위치 서비스 상태를 읽지 못해 켜진 것으로 봄')) {
@@ -152,6 +144,8 @@ Future<LocationAccess> ensureLocationAccess({
   if (first != LocationAccess.approximate || !askPrecise || justAsked) {
     return first;
   }
+  // 앞 단계가 늦어져 창을 띄울 시간이 지났으면 묻지 않고 대략적 위치로 둔다(다음 요청 때 다시 묻는다).
+  if (!mayAsk()) return first;
 
   onAskPrecise?.call();
   final again = await guarded<LocationPermission?>(
@@ -267,16 +261,16 @@ Future<void> main() async {
     MaterialApp(
       title: '웨일ERP 직원',
       debugShowCheckedModeBanner: false,
-      home: WebScreen(userAgent: appUserAgent(version)),
+      home: WebScreen(version: version),
     ),
   );
 }
 
 class WebScreen extends StatefulWidget {
-  const WebScreen({super.key, required this.userAgent});
+  const WebScreen({super.key, required this.version});
 
-  /// 기본 User-Agent 끝에 붙일 값.
-  final String userAgent;
+  /// 앱 버전. User-Agent 접미사와 브리지 `appInfo` 에 쓴다.
+  final String version;
 
   @override
   State<WebScreen> createState() => _WebScreenState();
@@ -285,6 +279,20 @@ class WebScreen extends StatefulWidget {
 class _WebScreenState extends State<WebScreen> {
   final _base = Uri.parse(webUrl);
   InAppWebViewController? _controller;
+  late final _bridge = NativeBridge(
+    base: _base,
+    handlers: {
+      'appInfo': appInfoHandler(
+        version: widget.version,
+        platform: defaultTargetPlatform,
+      ),
+      'measureLocation': (_) => measureLocation(
+        ensureAccess: _ensureLocationAccess,
+        currentPosition: readCurrentPosition,
+        approximatePosition: readAnyPosition,
+      ),
+    },
+  );
   late final _refresh = PullToRefreshController(
     settings: PullToRefreshSettings(color: primary),
     onRefresh: () => _controller?.reload(),
@@ -307,7 +315,8 @@ class _WebScreenState extends State<WebScreen> {
   // 스플래시가 떠 있는 동안 나온 안내. 첫 페이지가 그려지면 띄운다.
   LocationGuide? _pendingGuide;
 
-  Future<bool> _ensureLocationPermission() async {
+  /// 위치 권한을 확인하고(필요하면 묻고) 안내를 띄운다. 웹 geolocation 요청과 브리지 `measureLocation` 이 같이 쓴다.
+  Future<LocationAccess> _ensureLocationAccess() async {
     final result = await _locationGate.request();
     if (result.started && mounted) {
       final guide = locationGuide(result.access);
@@ -323,8 +332,11 @@ class _WebScreenState extends State<WebScreen> {
         _pendingGuide = guide;
       }
     }
-    return result.access.allowsWeb;
+    return result.access;
   }
+
+  Future<bool> _ensureLocationPermission() async =>
+      (await _ensureLocationAccess()).allowsWeb;
 
   void _showLocationGuide(LocationGuide guide) {
     final messenger = ScaffoldMessenger.of(context);
@@ -405,12 +417,21 @@ class _WebScreenState extends State<WebScreen> {
                     InAppWebView(
                       initialUrlRequest: URLRequest(url: WebUri(webUrl)),
                       initialSettings: InAppWebViewSettings(
-                        applicationNameForUserAgent: widget.userAgent,
+                        applicationNameForUserAgent: appUserAgent(
+                          widget.version,
+                        ),
                         useShouldOverrideUrlLoading: true,
+                        // Android 는 브리지 호출의 출처 · 맨 위 화면 여부를 페이지 안 JS 가 계산해 넘겨서 iframe 이 위조할 수
+                        // 있다. 브리지 스크립트를 웹 주소의 맨 위 화면에만 심어, iframe 에서는 callHandler 자체가 없게 한다.
+                        // NativeBridge.handle 의 출처 · 맨 위 화면 검사는 2차 방어로 남긴다.
+                        javaScriptBridgeOriginAllowList: {_base.origin},
+                        javaScriptBridgeForMainFrameOnly: true,
                       ),
                       pullToRefreshController: _refresh,
-                      onWebViewCreated: (controller) =>
-                          _controller = controller,
+                      onWebViewCreated: (controller) {
+                        _controller = controller;
+                        _bridge.attach(controller);
+                      },
                       // Android 전용: 웹이 navigator.geolocation 을 부르면 여기로 온다. 웹뷰는 자체 확인 창이 없어서
                       // OS 권한 창만 뜬다. 앱 안의 출퇴근 위치는 나중에 네이티브가 직접 잰다(계획 결정 8).
                       // 이 처리는 웹이 geolocation 을 부를 때를 대비한 것이다. retain 을 끄면 웹뷰가 출처별 허락을
@@ -448,10 +469,16 @@ class _WebScreenState extends State<WebScreen> {
                         if (_loaded) return;
                         // onLoadStop 은 그리기 전에 온다. 바로 걷으면 빈 흰 웹뷰가 비친다.
                         // 웹이 한 프레임 그린 뒤(rAF 두 번)에 스플래시를 걷는다.
+                        // Android 의 callAsyncJavaScript 는 브리지(callHandler)로 결과를 받는다. 브리지는 웹 주소의 맨 위 화면에만
+                        // 심으므로, 다른 출처 페이지에서는 답이 오지 않을 수 있어 2초로 끊는다(스플래시가 영원히 남지 않게).
                         try {
-                          await controller.callAsyncJavaScript(
-                            functionBody: 'await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));',
-                          );
+                          await controller
+                              .callAsyncJavaScript(
+                                functionBody: 'await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));',
+                              )
+                              .timeout(const Duration(seconds: 2));
+                        } on TimeoutException {
+                          // 그려졌는지 확인하지 못했어도 스플래시는 걷는다.
                         } finally {
                           if (mounted) _markLoaded();
                         }

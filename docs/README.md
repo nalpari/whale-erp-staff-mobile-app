@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | [webview-plan.md](webview-plan.md) | 웹뷰 앱 제작 계획. 옵시디언 노트 `whale-erp-staff/앱-출시/웹뷰-앱-제작-할일.md`의 사본이고, 개발자 계정 등록 내용만 뺐다. | 계획이나 결정이 바뀔 때만. 옵시디언 원본을 먼저 고치고 다시 복사한다 |
 | [progress.md](progress.md) | 계획과 현재 코드를 비교한 결과, 다음에 할 일 | 앱 코드를 바꾸는 커밋마다 |
+| [native-bridge.md](native-bridge.md) | 웹이 앱 기능을 부르는 약속(답 형식, 기능 목록). 웹 `native-bridge.ts`가 이 문서를 따른다 | 브리지 기능을 더하거나 바꿀 때 |
 
 처음 계획은 Capacitor였고, 2026-11-19에 Flutter로 바꿨다. 계획서의 「이전 결정 — Capacitor」 절은 기록으로만 남긴 것이다.
 
