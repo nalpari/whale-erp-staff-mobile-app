@@ -424,6 +424,15 @@ class _WebScreenState extends State<WebScreen> {
         directory: await getTemporaryDirectory(),
         fallbackName: fallbackName,
         cookie: cookie,
+        // 리다이렉트마다 그 주소에 맞는 웹뷰 쿠키(Path 등)를 다시 고른다.
+        cookieFor: withCookies
+            ? (u) async {
+                final cookies = await CookieManager.instance()
+                    .getCookies(url: WebUri.uri(u))
+                    .timeout(const Duration(seconds: 5));
+                return cookies.map((c) => '${c.name}=${c.value}').join('; ');
+              }
+            : null,
         userAgent: appUserAgent(widget.version),
       );
       if (!mounted) return;

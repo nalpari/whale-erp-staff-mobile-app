@@ -154,21 +154,24 @@ Future<DownloadOutcome> downloadFile(
   required Directory directory,
   required String fallbackName,
   String? cookie,
+  Future<String?> Function(Uri url)? cookieFor,
   String? userAgent,
   HttpClient Function()? clientFactory,
   Duration timeout = downloadTimeout,
   Duration idleTimeout = downloadIdleTimeout,
   Duration bodyTimeout = downloadBodyTimeout,
+  Duration keepOldFor = keepDownloadsFor,
 }) async {
   final client = (clientFactory ?? HttpClient.new)();
   try {
-    await _removeOldDownloads(directory);
+    await _removeOldDownloads(directory, keepFor: keepOldFor);
     return await _download(
       client,
       url,
       directory: directory,
       fallbackName: fallbackName,
       cookie: cookie,
+      cookieFor: cookieFor,
       userAgent: userAgent,
       timeout: timeout,
       idleTimeout: idleTimeout,
@@ -181,15 +184,24 @@ Future<DownloadOutcome> downloadFile(
   }
 }
 
-/// 지난번에 받은 파일(`download-*` 폴더)을 지운다. 급여 PDF 가 임시 폴더에 쌓이지 않게. 공유 시트는 파일을 자기 캐시로
-/// 복사해 가므로 지난 파일을 지워도 된다. 지우지 못하면 넘어간다.
-/// [directory] 는 앱 전체가 같이 쓰는 임시 폴더라, 우리가 만든 `download-*` 폴더만 지운다.
-Future<void> _removeOldDownloads(Directory directory) async {
+/// 받은 파일을 지우기 전에 두는 시간. 공유 시트가 아직 파일을 읽고 있을 수 있어(받기 잠금은 공유 전에 풀린다),
+/// 방금 받은 폴더는 다음 받기가 바로 지우지 않는다.
+const keepDownloadsFor = Duration(minutes: 10);
+
+/// 지난번에 받은 파일(`download-*` 폴더) 가운데 [keepFor] 보다 오래된 것을 지운다. 급여 PDF 가 임시 폴더에 쌓이지 않게.
+/// 지우지 못하면 넘어간다. [directory] 는 앱 전체가 같이 쓰는 임시 폴더라, 우리가 만든 `download-*` 폴더만 지운다.
+Future<void> _removeOldDownloads(
+  Directory directory, {
+  Duration keepFor = keepDownloadsFor,
+}) async {
   try {
     if (!await directory.exists()) return;
+    final cutoff = DateTime.now().subtract(keepFor);
     await for (final entry in directory.list()) {
       final name = entry.uri.pathSegments.where((s) => s.isNotEmpty).last;
-      if (entry is Directory && name.startsWith('download-')) {
+      if (entry is Directory &&
+          name.startsWith('download-') &&
+          (await entry.stat()).modified.isBefore(cutoff)) {
         await entry.delete(recursive: true).catchError((_) => entry);
       }
     }
@@ -269,6 +281,7 @@ Future<DownloadOutcome> _download(
   required Directory directory,
   required String fallbackName,
   String? cookie,
+  Future<String?> Function(Uri url)? cookieFor,
   String? userAgent,
   required Duration timeout,
   required Duration idleTimeout,
@@ -282,8 +295,12 @@ Future<DownloadOutcome> _download(
     for (var redirects = 0; ; redirects++) {
       final request = await client.getUrl(finalUrl);
       request.followRedirects = false;
-      if (cookie != null && cookie.isNotEmpty && isSameOrigin(finalUrl, url)) {
-        request.headers.set(HttpHeaders.cookieHeader, cookie);
+      if (isSameOrigin(finalUrl, url)) {
+        // 쿠키는 이동할 때마다 그 주소에 맞는 것(Path 등)을 다시 고른다. [cookieFor] 가 없으면 처음 쿠키를 쓴다.
+        final value = cookieFor != null ? await cookieFor(finalUrl) : cookie;
+        if (value != null && value.isNotEmpty) {
+          request.headers.set(HttpHeaders.cookieHeader, value);
+        }
       }
       if (userAgent != null) {
         request.headers.set(HttpHeaders.userAgentHeader, userAgent);

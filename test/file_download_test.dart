@@ -325,6 +325,22 @@ void main() {
         );
       });
 
+      test('리다이렉트마다 그 주소에 맞는 쿠키를 다시 고른다', () async {
+        final asked = <String>[];
+        final outcome = await downloadFile(
+          at('/redirect'),
+          directory: dir,
+          fallbackName: 'f',
+          cookieFor: (u) async {
+            asked.add(u.path);
+            return u.path == '/pdf' ? 'pdf=1' : 'first=1';
+          },
+        );
+        expect(outcome, isA<DownloadedFile>());
+        expect(asked, ['/redirect', '/pdf']);
+        expect(seenCookies, ['first=1', 'pdf=1']);
+      });
+
       test('같은 출처 안의 리다이렉트는 쿠키를 그대로 싣는다', () async {
         final outcome = await downloadFile(
           at('/redirect'),
@@ -367,7 +383,17 @@ void main() {
         expect((outcome as OpenInWebView).url.path, '/a/login');
       });
 
-      test('받을 때마다 지난 download-* 폴더를 지운다', () async {
+      test('방금 받은 폴더는 공유 시트가 읽고 있을 수 있어 다음 받기가 지우지 않는다', () async {
+        final first = await downloadFile(
+          at('/pdf'),
+          directory: dir,
+          fallbackName: 'f',
+        ) as DownloadedFile;
+        await downloadFile(at('/pdf'), directory: dir, fallbackName: 'f');
+        expect(File(first.path).existsSync(), isTrue);
+      });
+
+      test('받을 때마다 오래된 download-* 폴더를 지운다', () async {
         final first = await downloadFile(
           at('/pdf'),
           directory: dir,
@@ -377,6 +403,7 @@ void main() {
           at('/pdf'),
           directory: dir,
           fallbackName: 'f',
+          keepOldFor: Duration.zero,
         ) as DownloadedFile;
         expect(File(first.path).existsSync(), isFalse);
         expect(File(second.path).existsSync(), isTrue);
