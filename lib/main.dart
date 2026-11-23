@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -449,10 +451,16 @@ class _WebScreenState extends State<WebScreen> {
                         if (_loaded) return;
                         // onLoadStop 은 그리기 전에 온다. 바로 걷으면 빈 흰 웹뷰가 비친다.
                         // 웹이 한 프레임 그린 뒤(rAF 두 번)에 스플래시를 걷는다.
+                        // Android 의 callAsyncJavaScript 는 브리지(callHandler)로 결과를 받는다. 브리지는 웹 주소의 맨 위 화면에만
+                        // 심으므로, 다른 출처 페이지에서는 답이 오지 않을 수 있어 2초로 끊는다(스플래시가 영원히 남지 않게).
                         try {
-                          await controller.callAsyncJavaScript(
-                            functionBody: 'await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));',
-                          );
+                          await controller
+                              .callAsyncJavaScript(
+                                functionBody: 'await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));',
+                              )
+                              .timeout(const Duration(seconds: 2));
+                        } on TimeoutException {
+                          // 그려졌는지 확인하지 못했어도 스플래시는 걷는다.
                         } finally {
                           if (mounted) _markLoaded();
                         }

@@ -63,11 +63,11 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 
 | `data.status` | 다른 칸 | 뜻 |
 | --- | --- | --- |
-| `"ok"` | `latitude`, `longitude`(도), `accuracyMeters`(미터 · 운영체제가 알려 주지 않으면 `null`), `mocked`(참 · 거짓), `precise`(참 · 거짓 · 정확도 설정을 읽지 못하면 `null`) | 위치를 쟀다. `mocked`는 운영체제가 알려 준 모의 위치 여부(Android `isMock` · `isFromMockProvider`, iOS `isSimulatedBySoftware`). `precise`가 거짓이면 「대략적 위치」(Android 대략적 위치 · iOS 정확한 위치 끔)라 반경 판정이 틀릴 수 있다(판정은 그대로 하고, 앱이 화면 아래에 정확한 위치를 켜라는 안내를 띄운다). `null`이면 `accuracyMeters`로 판단한다 |
+| `"ok"` | `latitude`, `longitude`(도), `accuracyMeters`(미터 · 운영체제가 알려 주지 않으면 `null`), `mocked`(참 · 거짓), `precise`(참 · 거짓 · 정확도 설정을 읽지 못하면 `null`) | 위치를 쟀다. `mocked`는 운영체제가 알려 준 모의 위치 여부(Android `isMock` · `isFromMockProvider`, iOS `isSimulatedBySoftware`). `precise`가 거짓이면 「대략적 위치」(Android 대략적 위치 · iOS 정확한 위치 끔)라 반경 판정이 틀릴 수 있다(판정은 그대로 하고, 앱이 화면 아래에 정확한 위치를 켜라는 안내를 띄운다). `null`이면 `accuracyMeters`로 판단하고, 둘 다 `null`이면 판정은 그대로 하고 정확도 안내는 하지 않는다 |
 | `"denied"` | 없음 | 위치 권한 거부(영구 거부 포함, 측정 중에 권한을 빼앗긴 경우 포함). 영구 거부면 앱이 설정으로 가는 안내를 띄운다. 다시 물을 수 있는 거부와 영구 거부는 아직 나누지 않는다 |
-| `"unavailable"` | `reason`: `"serviceDisabled"`(기기 위치 꺼짐) · `"permissionCheckFailed"`(권한 확인 실패) · `"permissionTimeout"`(권한 확인 전체가 64초를 넘김) · `"timeout"`(8초 안에 위치를 못 읽음) · `"error"`(그 밖의 측정 오류) | 위치를 읽지 못했다. 기기 위치가 꺼졌으면 앱이 위치 설정으로 가는 안내를 띄운다 |
+| `"unavailable"` | `reason`: `"serviceDisabled"`(기기 위치 꺼짐) · `"permissionCheckFailed"`(권한 확인 실패) · `"permissionTimeout"`(권한 확인 전체가 60초를 넘김) · `"timeout"`(8초 안에 위치를 못 읽음) · `"error"`(그 밖의 측정 오류) | 위치를 읽지 못했다. 기기 위치가 꺼졌으면 앱이 위치 설정으로 가는 안내를 띄운다 |
 
-- **시간:** 권한 창이 뜨면 사용자가 고르는 동안 기다린다. 권한 확인 전체(정확한 위치 재요청 포함)는 앱 안에서 64초로 끊고(`permissionTimeout`), 권한이 정해진 뒤 측정은 8초로 끊는다(최대 약 9초). 그래서 웹은 이 기능만 기본 10초 대신 **`timeoutMs: 75_000`** 처럼 길게 기다린다. 권한이 이미 있으면 보통 몇 초 안에 끝난다.
+- **시간:** 권한 창이 뜨면 사용자가 고르는 동안 기다린다. 권한 확인 전체(정확한 위치 재요청 포함)는 앱 안에서 60초로 끊고(`permissionTimeout`), 권한이 정해진 뒤 측정은 8초로 끊는다(최대 약 9초). 잰 뒤 정확도 · 권한 · 위치 서비스를 다시 읽는 데 최대 4초가 더 들어, 최악의 합계는 약 73초다. 그래서 웹은 이 기능만 기본 10초 대신 **`timeoutMs: 75_000`** 처럼 길게 기다린다. 권한이 이미 있으면 보통 몇 초 안에 끝난다.
 - **알려진 한계:** Android는 고정밀 위치가 꺼진 기기에서 측정 중 「위치 정확도 켜기」 시스템 창을 띄울 수 있다. 사용자가 그 창을 보는 사이 8초가 지나면 `timeout`으로 답한다(다시 누르면 된다). iOS는 시간 초과 뒤에도 네이티브 측정이 위치를 하나 받을 때까지 이어질 수 있다(답만 끊긴다).
 - **부작용 없음:** 다시 불러도 위치를 한 번 더 잴 뿐이다. 위치 수집 · 이용 확인자료는 웹이 지금처럼 서버에 남긴다(앱은 좌표를 저장하거나 서버로 보내지 않는다).
 - **겹친 호출:** 권한 창이 떠 있는 동안 온 호출은 같은 권한 결과를 기다린다.
