@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -241,13 +242,33 @@ Future<bool> allowGeolocation(
 const closeTopDialogScript = '''
 (() => {
   const opened = Array.from(document.querySelectorAll('dialog[open]'));
-  const top = opened[opened.length - 1];
-  if (!top) return false;
+  if (opened.length === 0) return false;
+  // 가장 나중에 연 시트가 맨 위다. 연 순서는 dialogOrderScript 가 남긴다(없으면 0). 같으면 DOM 에서 뒤의 것.
+  const seq = (d) => Number(d.dataset.whaleOpenedAt || 0);
+  const top = opened.reduce((a, b) => (seq(b) >= seq(a) ? b : a));
   const event = new Event('cancel', { cancelable: true });
   top.dispatchEvent(event);
   if (!event.defaultPrevented && top.open) top.close();
   return true;
 })()
+''';
+
+/// 페이지가 열릴 때 심는 스크립트. 시트(`<dialog>`)를 열 때마다 연 순서를 `data-whale-opened-at` 에 남긴다.
+/// `querySelectorAll` 은 DOM 순서라, DOM 에서 앞에 있는 시트를 나중에 열면 맨 위 시트를 고르지 못하기 때문이다.
+const dialogOrderScript = '''
+(() => {
+  if (typeof HTMLDialogElement === 'undefined' || window.__whaleDialogOrder !== undefined) return;
+  window.__whaleDialogOrder = 0;
+  const proto = HTMLDialogElement.prototype;
+  for (const name of ['showModal', 'show']) {
+    const original = proto[name];
+    if (typeof original !== 'function') continue;
+    proto[name] = function (...args) {
+      this.dataset.whaleOpenedAt = String(++window.__whaleDialogOrder);
+      return original.apply(this, args);
+    };
+  }
+})();
 ''';
 
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
@@ -570,9 +591,11 @@ class _WebScreenState extends State<WebScreen> {
   /// 웹에 열린 `<dialog>` 가 있으면 닫고 true. 스크립트가 실패하거나 늦으면(1초) false 로 보고 평소 뒤로 가기를 한다.
   Future<bool> _closeWebDialog(InAppWebViewController controller) async {
     try {
+      // 시간이 넘어도 스크립트는 취소되지 않아 뒤늦게 시트를 닫을 수 있다. 그때 이 입력으로 이전 페이지 이동 · 앱 종료까지
+      // 하면 한 번 눌렀는데 두 가지가 일어나므로, 시간 초과면 이 입력을 쓴 것으로 본다(안 닫혔으면 한 번 더 누르면 된다).
       final closed = await controller
           .evaluateJavascript(source: closeTopDialogScript)
-          .timeout(const Duration(seconds: 1));
+          .timeout(const Duration(seconds: 1), onTimeout: () => true);
       return closed == true;
     } catch (e, s) {
       FlutterError.reportError(
@@ -620,6 +643,14 @@ class _WebScreenState extends State<WebScreen> {
                   children: [
                     InAppWebView(
                       initialUrlRequest: URLRequest(url: WebUri(webUrl)),
+                      initialUserScripts: UnmodifiableListView([
+                        UserScript(
+                          source: dialogOrderScript,
+                          injectionTime:
+                              UserScriptInjectionTime.AT_DOCUMENT_START,
+                          forMainFrameOnly: true,
+                        ),
+                      ]),
                       initialSettings: InAppWebViewSettings(
                         applicationNameForUserAgent: appUserAgent(
                           widget.version,
