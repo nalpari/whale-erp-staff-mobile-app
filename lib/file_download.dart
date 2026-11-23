@@ -46,6 +46,10 @@ const downloadFailedMessage = '파일을 받지 못했어요. 잠시 뒤 다시 
 /// 응답 헤더가 올 때까지의 제한. 급여 PDF 만드는 데 웹 라우트가 20초까지 기다린다. 그보다 조금 넉넉하게.
 const downloadTimeout = Duration(seconds: 30);
 
+/// 본문 전체를 받는 데 쓰는 상한. 무응답 제한([downloadIdleTimeout])은 조금씩 계속 오는 응답을 끊지 못해 따로 둔다.
+/// 넘으면 연결은 downloadFile 이 끝날 때 끊기고 반쯤 받은 파일은 지운다.
+const downloadBodyTimeout = Duration(seconds: 60);
+
 /// 본문을 받는 동안 이만큼 아무 데이터도 오지 않으면 실패로 본다. 전체 시간으로 끊지 않아 큰 스캔본도 받을 수 있다.
 const downloadIdleTimeout = Duration(seconds: 15);
 
@@ -61,9 +65,14 @@ bool isSignedDownload(Uri uri) {
   // 다른 AWS 서비스(amazonaws.com 아래)는 계약서 주소로 보지 않는다.
   final isS3 = RegExp(r'(^|\.)s3([.-][a-z0-9-]+)?\.amazonaws\.com$')
       .hasMatch(host);
-  final params = uri.queryParameters.keys.map((key) => key.toLowerCase());
-  return isS3 &&
-      (params.contains('x-amz-signature') || params.contains('signature'));
+  // 서명 값이 비어 있으면 서명 주소가 아니다.
+  final signed = uri.queryParameters.entries.any(
+    (e) =>
+        (e.key.toLowerCase() == 'x-amz-signature' ||
+            e.key.toLowerCase() == 'signature') &&
+        e.value.isNotEmpty,
+  );
+  return isS3 && signed;
 }
 
 /// 웹의 급여명세서 PDF 라우트(`/pay/<id>/pdf`)인지. 웹 주소와 같은 출처일 때만.
@@ -138,7 +147,7 @@ bool isMessageResponse(int status, String? contentType) =>
 
 /// [url] 을 받아 [directory] 에 저장한다. [cookie] 가 있으면 Cookie 헤더로 싣는다(같은 호스트의 급여 PDF).
 /// 리다이렉트는 따라간다. 출처가 바뀌는 리다이렉트에서는 Dart HttpClient 가 Cookie 헤더를 떼고 넘긴다(테스트로 고정).
-/// 응답 헤더까지는 [timeout], 본문은 [idleTimeout] 동안 데이터가 없을 때만 실패로 본다.
+/// 응답 헤더까지는 [timeout], 본문은 [idleTimeout] 동안 데이터가 없거나 전체가 [bodyTimeout] 을 넘으면 실패로 본다.
 /// 결과는 늘 [DownloadOutcome] 하나이고 예외를 던지지 않는다.
 Future<DownloadOutcome> downloadFile(
   Uri url, {
@@ -149,6 +158,7 @@ Future<DownloadOutcome> downloadFile(
   HttpClient Function()? clientFactory,
   Duration timeout = downloadTimeout,
   Duration idleTimeout = downloadIdleTimeout,
+  Duration bodyTimeout = downloadBodyTimeout,
 }) async {
   final client = (clientFactory ?? HttpClient.new)();
   try {
@@ -162,6 +172,7 @@ Future<DownloadOutcome> downloadFile(
       userAgent: userAgent,
       timeout: timeout,
       idleTimeout: idleTimeout,
+      bodyTimeout: bodyTimeout,
     );
   } catch (e, s) {
     return DownloadFailed(e, s);
@@ -192,6 +203,31 @@ const maxFileBytes = 50 * 1024 * 1024;
 
 /// 평문 오류 글의 상한. 넘으면 실패로 본다.
 const maxMessageBytes = 64 * 1024;
+
+/// [body] 를 [sink] 에 쓴다. [limit] 안에 끝나지 않으면 구독을 끊고 TimeoutException.
+/// `pipe(...).timeout` 은 구독을 끊지 않아 기한이 지나도 계속 쓰므로 직접 구독한다.
+Future<void> _writeWithin(Stream<List<int>> body, IOSink sink, Duration limit) {
+  final done = Completer<void>();
+  late final StreamSubscription<List<int>> subscription;
+  final timer = Timer(limit, () {
+    if (done.isCompleted) return;
+    unawaited(subscription.cancel());
+    done.completeError(TimeoutException('본문을 기한 안에 다 받지 못함', limit));
+  });
+  subscription = body.listen(
+    sink.add,
+    onError: (Object e, StackTrace s) {
+      timer.cancel();
+      if (!done.isCompleted) done.completeError(e, s);
+    },
+    onDone: () {
+      timer.cancel();
+      if (!done.isCompleted) done.complete();
+    },
+    cancelOnError: true,
+  );
+  return done.future;
+}
 
 /// [body] 가 [limit] 바이트를 넘으면 오류로 끊는다.
 Stream<List<int>> _capped(Stream<List<int>> body, int limit) {
@@ -227,6 +263,7 @@ Future<DownloadOutcome> _download(
   String? userAgent,
   required Duration timeout,
   required Duration idleTimeout,
+  required Duration bodyTimeout,
 }) async {
   // 연결부터 응답 헤더(리다이렉트 포함)까지를 한 번의 [timeout] 으로 묶는다.
   // 리다이렉트는 직접 따라간다. HttpClient 의 자동 리다이렉트는 호스트가 바뀔 때만 쿠키를 떼서, 같은 호스트의
@@ -264,8 +301,11 @@ Future<DownloadOutcome> _download(
   final body = response.timeout(idleTimeout);
 
   if (isMessageResponse(status, contentType)) {
-    final text = (await utf8.decodeStream(_capped(body, maxMessageBytes)))
-        .trim();
+    final text =
+        (await utf8
+                .decodeStream(_capped(body, maxMessageBytes))
+                .timeout(bodyTimeout))
+            .trim();
     return DownloadMessage(text.isEmpty ? downloadFailedMessage : text);
   }
   final isHtml = (contentType ?? '').toLowerCase().startsWith('text/html');
@@ -286,7 +326,8 @@ Future<DownloadOutcome> _download(
   final file = File('${folder.path}/$name');
   final sink = file.openWrite();
   try {
-    await _capped(body, maxFileBytes).pipe(sink);
+    await _writeWithin(_capped(body, maxFileBytes), sink, bodyTimeout);
+    await sink.close();
   } catch (e) {
     await sink.close().catchError((_) {});
     // 반쯤 받은 파일은 남기지 않는다.

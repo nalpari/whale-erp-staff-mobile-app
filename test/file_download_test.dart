@@ -274,6 +274,34 @@ void main() {
         expect(otherCookies, isEmpty);
       });
 
+      test('본문이 조금씩 계속 와도 전체 기한을 넘으면 멈추고 반쯤 받은 파일을 지운다', () async {
+        final drip = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => drip.close(force: true));
+        drip.listen((req) async {
+          req.response.headers.contentType = ContentType('application', 'pdf');
+          try {
+            for (var i = 0; i < 100; i++) {
+              req.response.add([1]);
+              await req.response.flush();
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+            }
+            await req.response.close();
+          } catch (_) {}
+        });
+        final outcome = await downloadFile(
+          Uri.parse('http://${drip.address.host}:${drip.port}/drip.pdf'),
+          directory: dir,
+          fallbackName: 'f',
+          idleTimeout: const Duration(seconds: 1),
+          bodyTimeout: const Duration(milliseconds: 200),
+        );
+        expect(outcome, isA<DownloadFailed>());
+        expect(
+          dir.listSync().where((e) => e.path.contains('download-')),
+          isEmpty,
+        );
+      });
+
       test('받을 파일이 상한을 넘으면 멈추고 반쯤 받은 파일을 남기지 않는다', () async {
         final big = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         addTearDown(() => big.close(force: true));
@@ -530,5 +558,11 @@ void main() {
     expect(signed('abc.execute-api.ap-northeast-2.amazonaws.com'), isFalse);
     expect(signed('lambda-url.ap-northeast-2.on.aws'), isFalse);
     expect(signed('evil-s3.amazonaws.com.example.com'), isFalse);
+    expect(
+      isSignedDownload(
+        Uri.parse('https://bucket.s3.amazonaws.com/a.pdf?X-Amz-Signature='),
+      ),
+      isFalse,
+    );
   });
 }

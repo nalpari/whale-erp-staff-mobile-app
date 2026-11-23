@@ -312,6 +312,9 @@ class _WebScreenState extends State<WebScreen> {
   // 직전에 로그인 화면 등으로 웹뷰에 넘긴 받기. 같은 받기가 곧바로 또 화면을 받으면(앱이 읽은 쿠키가 웹뷰와 어긋남)
   // 로그인 → 받기 → 로그인이 사람 손 없이 되풀이되므로 끊는다.
   ({Uri url, DateTime at})? _lastOpenInWebView;
+  // 받기 결과 화면(로그인 등)을 웹뷰에 열려고 앱이 직접 연 주소. 그 주소가 급여 PDF 주소여도 한 번은 가로채지 않는다
+  // (가로채면 화면을 보여 주지 못하고 같은 받기가 되풀이된다).
+  Uri? _openingInWebView;
 
   bool _justIntercepted(Uri? errorUrl) {
     final at = _interceptedAt;
@@ -465,6 +468,7 @@ class _WebScreenState extends State<WebScreen> {
             _lastOpenInWebView = (url: url, at: DateTime.now());
             // 웹뷰가 이 화면을 여는 데 생긴 오류는 연결 실패 화면으로 보여야 하므로 가로채기 창을 닫는다.
             _interceptedAt = null;
+            _openingInWebView = page;
             await _controller?.loadUrl(
               urlRequest: URLRequest(url: WebUri.uri(page)),
             );
@@ -624,6 +628,11 @@ class _WebScreenState extends State<WebScreen> {
                         final uri = action.request.url;
                         // 급여 PDF 「명세서 내보내기」: 실패 응답(평문 오류 · 로그인 이동)은 웹뷰가 페이지로 열어 오류 글이
                         // 화면을 덮으므로, 웹뷰가 이동하기 전에 앱이 쿠키를 실어 받는다. 성공 PDF 도 한 번만 만들어진다.
+                        if (uri != null &&
+                            _openingInWebView?.toString() == uri.toString()) {
+                          _openingInWebView = null;
+                          return NavigationActionPolicy.ALLOW;
+                        }
                         if (uri != null &&
                             action.isForMainFrame &&
                             isPayslipPdf(uri, _base)) {
