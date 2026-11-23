@@ -595,14 +595,31 @@ class _WebScreenState extends State<WebScreen> {
     if (guide != null) _showLocationGuide(guide);
   }
 
-  /// 웹에 열린 `<dialog>` 가 있으면 닫고 true. 스크립트가 실패하거나 늦으면(1초) false 로 보고 평소 뒤로 가기를 한다.
+  // 직전 뒤로 가기에서 닫기 스크립트가 시간을 넘긴 때. 웹뷰가 멈춰 매번 넘기면 뒤로 가기가 먹통이 되므로,
+  // 바로 이어서 또 누르면 스크립트를 건너뛰고 평소 뒤로 가기를 한다.
+  DateTime? _dialogTimedOutAt;
+
+  /// 웹에 열린 `<dialog>` 가 있으면 닫고 true. 스크립트가 실패하면 false 로 보고 평소 뒤로 가기를 한다.
+  /// 시간이 넘으면(1초) 이 입력은 쓴 것으로 보고 true. 단 10초 안에 또 누르면 스크립트 없이 평소 뒤로 가기(false).
   Future<bool> _closeWebDialog(InAppWebViewController controller) async {
+    final timedOutAt = _dialogTimedOutAt;
+    _dialogTimedOutAt = null;
+    if (timedOutAt != null &&
+        DateTime.now().difference(timedOutAt) < const Duration(seconds: 10)) {
+      return false;
+    }
     try {
       // 시간이 넘어도 스크립트는 취소되지 않아 뒤늦게 시트를 닫을 수 있다. 그때 이 입력으로 이전 페이지 이동 · 앱 종료까지
       // 하면 한 번 눌렀는데 두 가지가 일어나므로, 시간 초과면 이 입력을 쓴 것으로 본다(안 닫혔으면 한 번 더 누르면 된다).
       final closed = await controller
           .evaluateJavascript(source: closeTopDialogScript)
-          .timeout(const Duration(seconds: 1), onTimeout: () => true);
+          .timeout(
+            const Duration(seconds: 1),
+            onTimeout: () {
+              _dialogTimedOutAt = DateTime.now();
+              return true;
+            },
+          );
       return closed == true;
     } catch (e, s) {
       FlutterError.reportError(
