@@ -307,13 +307,17 @@ class _WebScreenState extends State<WebScreen> {
   bool _downloading = false;
   // 웹뷰의 이동 · 받기를 앱이 가로챈 때. 바로 뒤 오는 main frame 오류는 가로채기 때문이라 오류 화면을 띄우지 않는다.
   DateTime? _interceptedAt;
+  // 가로챈 주소. 오류 무시는 이 주소에서 온 오류만 한다(다른 페이지의 진짜 오류는 오류 화면으로).
+  Uri? _interceptedUrl;
   // 직전에 로그인 화면 등으로 웹뷰에 넘긴 받기. 같은 받기가 곧바로 또 화면을 받으면(앱이 읽은 쿠키가 웹뷰와 어긋남)
   // 로그인 → 받기 → 로그인이 사람 손 없이 되풀이되므로 끊는다.
   ({Uri url, DateTime at})? _lastOpenInWebView;
 
-  bool _justIntercepted() {
+  bool _justIntercepted(Uri? errorUrl) {
     final at = _interceptedAt;
     return at != null &&
+        errorUrl != null &&
+        errorUrl.toString() == _interceptedUrl.toString() &&
         DateTime.now().difference(at) < const Duration(seconds: 3);
   }
 
@@ -364,6 +368,7 @@ class _WebScreenState extends State<WebScreen> {
     // 웹뷰가 받으려던 이동을 가로챘다. iOS 는 PDF 응답을 cancel 하면 main frame 오류(WebKitErrorDomain 102 등)를
     // 보내므로, 바로 뒤 오는 오류는 연결 실패 화면으로 보지 않는다(onReceivedError).
     _interceptedAt = DateTime.now();
+    _interceptedUrl = url;
     if (_downloading) return;
     _downloading = true;
     final messenger = ScaffoldMessenger.of(context);
@@ -677,7 +682,7 @@ class _WebScreenState extends State<WebScreen> {
                         _refresh.endRefreshing();
                         if (request.isForMainFrame == false ||
                             error.type == WebResourceErrorType.CANCELLED ||
-                            _justIntercepted()) {
+                            _justIntercepted(request.url)) {
                           return;
                         }
                         setState(() => _failed = true);

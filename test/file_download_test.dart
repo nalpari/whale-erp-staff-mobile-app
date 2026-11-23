@@ -510,4 +510,17 @@ void main() {
       isFalse,
     );
   });
+
+  test('S3 호스트만 계약서 서명 주소로 본다', () {
+    bool signed(String host) =>
+        isSignedDownload(Uri.parse('https://$host/a.pdf?X-Amz-Signature=x'));
+    expect(signed('s3.amazonaws.com'), isTrue);
+    expect(signed('bucket.s3.amazonaws.com'), isTrue);
+    expect(signed('bucket.s3.ap-northeast-2.amazonaws.com'), isTrue);
+    expect(signed('s3.ap-northeast-2.amazonaws.com'), isTrue);
+    expect(signed('bucket.s3-ap-northeast-2.amazonaws.com'), isTrue);
+    expect(signed('abc.execute-api.ap-northeast-2.amazonaws.com'), isFalse);
+    expect(signed('lambda-url.ap-northeast-2.on.aws'), isFalse);
+    expect(signed('evil-s3.amazonaws.com.example.com'), isFalse);
+  });
 }

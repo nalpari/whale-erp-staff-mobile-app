@@ -57,7 +57,10 @@ const _maxFileNameBytes = 200;
 bool isSignedDownload(Uri uri) {
   if (uri.scheme != 'https') return false;
   final host = uri.host.toLowerCase();
-  final isS3 = host == 's3.amazonaws.com' || host.endsWith('.amazonaws.com');
+  // S3 호스트만: s3.amazonaws.com, <버킷>.s3.amazonaws.com, (<버킷>.)s3.<리전>.amazonaws.com, s3-<리전> 옛 형식.
+  // 다른 AWS 서비스(amazonaws.com 아래)는 계약서 주소로 보지 않는다.
+  final isS3 = RegExp(r'(^|\.)s3([.-][a-z0-9-]+)?\.amazonaws\.com$')
+      .hasMatch(host);
   final params = uri.queryParameters.keys.map((key) => key.toLowerCase());
   return isS3 &&
       (params.contains('x-amz-signature') || params.contains('signature'));
@@ -263,13 +266,13 @@ Future<DownloadOutcome> _download(
     return DownloadMessage(text.isEmpty ? downloadFailedMessage : text);
   }
   final isHtml = (contentType ?? '').toLowerCase().startsWith('text/html');
+  // 본문이 필요 없는 응답은 기다리지 않는다. 연결은 downloadFile 이 끝날 때 client.close(force: true) 로 끊긴다.
+  // (본문을 다 읽으려 하면 조금씩 계속 오는 응답에 무응답 제한이 걸리지 않아 끝나지 않는다.)
   if (isHtml && status == 200) {
-    await body.drain<void>();
     return OpenInWebView(finalUrl);
   }
   if (status != 200) {
     // 502 · 504 같은 HTML 오류 페이지도 여기로 온다. 웹뷰로 넘기면 오류 페이지가 화면을 덮는다.
-    await body.drain<void>();
     // 주소는 담지 않는다. S3 서명 주소가 오류 기록에 남으면 만료 전까지 계약서를 받을 수 있다.
     return DownloadFailed(HttpException('응답 $status'));
   }
