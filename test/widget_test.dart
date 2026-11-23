@@ -672,6 +672,7 @@ void main() {
       LocationAccuracyStatus accuracy = LocationAccuracyStatus.precise,
       LocationPermission permission = LocationPermission.whileInUse,
     }) => measureLocation(
+      now: () => DateTime(2026, 11, 23),
       ensureAccess: () async => access,
       currentPosition: read ?? () async => position(),
       accuracy: () async => accuracy,
@@ -679,9 +680,44 @@ void main() {
       serviceEnabled: () async => true,
     );
 
+    test('대략적 위치면 새 위치를 기다리지 않는 읽기를 쓰고 위치 나이를 함께 보낸다', () async {
+      var fresh = 0;
+      final result = await measureLocation(
+        now: () => DateTime(2026, 11, 23, 0, 5),
+        ensureAccess: () async => LocationAccess.approximate,
+        currentPosition: () async {
+          fresh++;
+          return position();
+        },
+        approximatePosition: () async => position(),
+        accuracy: () async => LocationAccuracyStatus.reduced,
+      );
+      expect(fresh, 0);
+      expect(result['status'], 'ok');
+      expect(result['ageSeconds'], 300);
+      expect(result['precise'], isFalse);
+    });
+
+    test('정확한 위치면 새 위치 읽기를 쓴다', () async {
+      var any = 0;
+      final result = await measureLocation(
+        now: () => DateTime(2026, 11, 23),
+        ensureAccess: () async => LocationAccess.precise,
+        currentPosition: () async => position(),
+        approximatePosition: () async {
+          any++;
+          return position();
+        },
+        accuracy: () async => LocationAccuracyStatus.precise,
+      );
+      expect(any, 0);
+      expect(result['ageSeconds'], 0);
+    });
+
     test('정확한 위치면 좌표와 모의 여부를 같은 측정값에서 돌려준다', () async {
       expect(
         await measureLocation(
+          now: () => DateTime(2026, 11, 23),
           ensureAccess: () async => LocationAccess.precise,
           currentPosition: () async => position(mocked: true),
           accuracy: () async => LocationAccuracyStatus.precise,
@@ -691,6 +727,7 @@ void main() {
           'latitude': 37.5,
           'longitude': 127.0,
           'accuracyMeters': 12.0,
+          'ageSeconds': 0,
           'mocked': true,
           'precise': true,
         },
@@ -780,6 +817,7 @@ void main() {
       tester,
     ) async {
       final result = await measureLocation(
+        now: () => DateTime(2026, 11, 23),
         ensureAccess: () async => LocationAccess.precise,
         currentPosition: () async => position(),
         accuracy: () async => throw StateError('정확도'),
@@ -825,6 +863,7 @@ void main() {
       var read = false;
       Map<String, Object?>? result;
       measureLocation(
+        now: () => DateTime(2026, 11, 23),
         ensureAccess: () => Completer<LocationAccess>().future,
         currentPosition: () async {
           read = true;
@@ -842,6 +881,7 @@ void main() {
     testWidgets('권한 확인이 예외로 끝나면 보고하고 permissionCheckFailed', (tester) async {
       expect(
         await measureLocation(
+          now: () => DateTime(2026, 11, 23),
           ensureAccess: () async => throw StateError('안내 실패'),
           currentPosition: () async => position(),
         ),
@@ -889,6 +929,7 @@ void main() {
       Map<String, Object?>? result;
       final errors = await collectErrors(() async {
         result = await measureLocation(
+          now: () => DateTime(2026, 11, 23),
           ensureAccess: () async => LocationAccess.precise,
           currentPosition: () async => position(),
           accuracy: () => Completer<LocationAccuracyStatus>().future,
@@ -903,6 +944,7 @@ void main() {
       Map<String, Object?>? result;
       final errors = await collectErrors(() async {
         result = await measureLocation(
+          now: () => DateTime(2026, 11, 23),
           ensureAccess: () async => LocationAccess.precise,
           currentPosition: () async => throw StateError('측정'),
           checkPermission: () => Completer<LocationPermission>().future,
@@ -916,6 +958,7 @@ void main() {
       Map<String, Object?>? result;
       final errors = await collectErrors(() async {
         result = await measureLocation(
+          now: () => DateTime(2026, 11, 23),
           ensureAccess: () async => LocationAccess.precise,
           currentPosition: () async => throw StateError('측정'),
           checkPermission: () async => throw StateError('권한'),
@@ -930,6 +973,7 @@ void main() {
     ) async {
       expect(
         await measureLocation(
+          now: () => DateTime(2026, 11, 23),
           ensureAccess: () async => LocationAccess.precise,
           currentPosition: () async =>
               throw const PositionUpdateException('denied'),

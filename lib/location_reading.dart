@@ -49,6 +49,8 @@ const _followUpTimeLimit = Duration(seconds: 2);
 ///
 /// - `{status: 'ok', latitude, longitude, accuracyMeters, mocked, precise}`
 ///   - `accuracyMeters`: 운영체제가 정확도를 알려 주지 않으면(0 이하) null.
+///   - `ageSeconds`: 그 위치를 잰 뒤 지난 초. 정확한 위치는 2초 안쪽 새 위치만 쓰고, 대략적 위치는 운영체제가 준 첫 위치라
+///     클 수 있다(Android 는 대략적 위치를 최대 10분에 한 번 새로 만든다).
 ///   - `mocked`: 운영체제가 알려 준 모의 위치 여부(Android `isMock`/`isFromMockProvider`, iOS `isSimulatedBySoftware`).
 ///   - `precise`: 잰 뒤 정확도 설정을 새로 읽는다. false 면 「대략적 위치」(Android 대략적 위치 · iOS 정확한 위치 끔)라
 ///     반경 판정이 틀릴 수 있다(판정은 그대로 하고 안내만 한다). 정확도 설정을 읽지 못하면 null.
@@ -60,6 +62,8 @@ const _followUpTimeLimit = Duration(seconds: 2);
 Future<Map<String, Object?>> measureLocation({
   required Future<LocationAccess> Function() ensureAccess,
   required Future<Position> Function() currentPosition,
+  Future<Position> Function()? approximatePosition,
+  DateTime Function() now = DateTime.now,
   Future<LocationAccuracyStatus> Function() accuracy =
       Geolocator.getLocationAccuracy,
   Future<LocationPermission> Function() checkPermission =
@@ -89,14 +93,21 @@ Future<Map<String, Object?>> measureLocation({
   }
   try {
     // iOS 는 시간이 넘어도 플러그인이 네이티브 측정을 멈추지 않는다(답만 끊는다).
-    final position = await currentPosition().timeout(
+    // 대략적 위치는 Android 가 새 좌표를 드물게(최대 10분에 한 번) 만들어 줘서, 새 위치만 기다리면 매번 시간이 넘는다.
+    // 그때는 운영체제가 주는 첫 위치를 그대로 쓰고, 나이(ageSeconds)를 함께 보내 웹이 판단하게 한다.
+    final read = access == LocationAccess.approximate
+        ? (approximatePosition ?? currentPosition)
+        : currentPosition;
+    final position = await read().timeout(
       measureTimeLimit + const Duration(seconds: 1),
     );
+    final age = now().difference(position.timestamp).inSeconds;
     return {
       'status': 'ok',
       'latitude': position.latitude,
       'longitude': position.longitude,
       'accuracyMeters': position.accuracy > 0 ? position.accuracy : null,
+      'ageSeconds': age < 0 ? 0 : age,
       'mocked': position.isMocked,
       'precise': await _readPrecise(accuracy),
     };
@@ -211,10 +222,19 @@ Future<Position> firstFreshPosition(
 }
 
 /// 지금 위치를 높은 정확도로 새로 읽는다. 측정을 시작하기 전에 잰 위치는 쓰지 않는다([firstFreshPosition]).
-/// [measureTimeLimit] 안에 새 위치를 못 읽으면 TimeoutException.
+/// [measureTimeLimit] 안에 새 위치를 못 읽으면 TimeoutException. 대략적 위치일 때는 [readAnyPosition] 을 쓴다.
 Future<Position> readCurrentPosition() => firstFreshPosition(
   Geolocator.getPositionStream(
     locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
   ),
   DateTime.now(),
+);
+
+/// 운영체제가 주는 첫 위치를 그대로 읽는다(대략적 위치용. 운영체제가 새 좌표를 드물게 만든다).
+/// [measureTimeLimit] 안에 못 읽으면 TimeoutException.
+Future<Position> readAnyPosition() => Geolocator.getCurrentPosition(
+  locationSettings: const LocationSettings(
+    accuracy: LocationAccuracy.high,
+    timeLimit: measureTimeLimit,
+  ),
 );

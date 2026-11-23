@@ -289,6 +289,7 @@ class _WebScreenState extends State<WebScreen> {
       'measureLocation': (_) => measureLocation(
         ensureAccess: _ensureLocationAccess,
         currentPosition: readCurrentPosition,
+        approximatePosition: readAnyPosition,
       ),
     },
   );

@@ -67,11 +67,11 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 
 ### measureLocation
 
-위치 권한을 확인하고(아직 정하지 않았으면 OS 권한 창을 띄우고), 지금 위치를 **새로** 한 번 재어 좌표와 모의 위치 여부를 **같은 측정값에서** 함께 돌려준다. 마지막으로 알던 위치는 쓰지 않고, 운영체제가 첫 결과로 측정 전에 캐시해 둔 옛 위치를 주면(호출 시각보다 2초 넘게 앞선 위치) 건너뛰고 다음 위치를 기다린다. `data`는 웹 출퇴근 화면의 위치 상태와 같은 이름을 쓴다.
+위치 권한을 확인하고(아직 정하지 않았으면 OS 권한 창을 띄우고), 지금 위치를 **새로** 한 번 재어 좌표와 모의 위치 여부를 **같은 측정값에서** 함께 돌려준다. 마지막으로 알던 위치는 쓰지 않고, 운영체제가 첫 결과로 측정 전에 캐시해 둔 옛 위치를 주면(호출 시각보다 2초 넘게 앞선 위치) 건너뛰고 다음 위치를 기다린다. 단, 「대략적 위치」만 허락된 경우는 예외다. Android는 대략적 위치를 최대 10분에 한 번만 새로 만들어서, 새 위치를 기다리면 매번 시간 초과가 난다. 그래서 운영체제가 준 첫 위치를 그대로 쓰고, 웹은 `ageSeconds`와 `precise`로 판단한다. `data`는 웹 출퇴근 화면의 위치 상태와 같은 이름을 쓴다.
 
 | `data.status` | 다른 칸 | 뜻 |
 | --- | --- | --- |
-| `"ok"` | `latitude`, `longitude`(도), `accuracyMeters`(미터 · 운영체제가 알려 주지 않으면 `null`), `mocked`(참 · 거짓), `precise`(참 · 거짓 · 정확도 설정을 읽지 못하면 `null`) | 위치를 쟀다. `mocked`는 운영체제가 알려 준 모의 위치 여부(Android `isMock` · `isFromMockProvider`, iOS `isSimulatedBySoftware`). `precise`가 거짓이면 「대략적 위치」(Android 대략적 위치 · iOS 정확한 위치 끔)라 반경 판정이 틀릴 수 있다(판정은 그대로 하고, 앱이 화면 아래에 정확한 위치를 켜라는 안내를 띄운다). `null`이면 `accuracyMeters`로 판단하고, 둘 다 `null`이면 판정은 그대로 하고 정확도 안내는 하지 않는다 |
+| `"ok"` | `latitude`, `longitude`(도), `accuracyMeters`(미터 · 운영체제가 알려 주지 않으면 `null`), `ageSeconds`(그 위치를 잰 뒤 지난 초), `mocked`(참 · 거짓), `precise`(참 · 거짓 · 정확도 설정을 읽지 못하면 `null`) | 위치를 쟀다. `mocked`는 운영체제가 알려 준 모의 위치 여부(Android `isMock` · `isFromMockProvider`, iOS `isSimulatedBySoftware`). `precise`가 거짓이면 「대략적 위치」(Android 대략적 위치 · iOS 정확한 위치 끔)라 반경 판정이 틀릴 수 있다(판정은 그대로 하고, 앱이 화면 아래에 정확한 위치를 켜라는 안내를 띄운다). `null`이면 `accuracyMeters`로 판단하고, 둘 다 `null`이면 판정은 그대로 하고 정확도 안내는 하지 않는다 |
 | `"denied"` | 없음 | 위치 권한 거부(영구 거부 포함, 측정 중에 권한을 빼앗긴 경우 포함). 영구 거부면 앱이 설정으로 가는 안내를 띄운다. 다시 물을 수 있는 거부와 영구 거부는 아직 나누지 않는다 |
 | `"unavailable"` | `reason`: `"serviceDisabled"`(기기 위치 꺼짐) · `"permissionCheckFailed"`(권한 확인 실패) · `"permissionTimeout"`(권한 확인 전체가 60초를 넘김) · `"timeout"`(8초 안에 위치를 못 읽음) · `"error"`(그 밖의 측정 오류) | 위치를 읽지 못했다. 기기 위치가 꺼졌으면 앱이 위치 설정으로 가는 안내를 띄운다 |
 
