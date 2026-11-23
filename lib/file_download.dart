@@ -27,21 +27,30 @@ final class DownloadMessage extends DownloadOutcome {
   final String message;
 }
 
-/// 파일이 아니라 화면(HTML)이 왔다 — 접속이 끝나 로그인 화면으로 보낸 경우 등. 웹뷰에서 그 주소를 열어 웹이 처리하게 한다.
+/// 파일이 아니라 화면(200 HTML)이 왔다 — 접속이 끝나 로그인 화면으로 보낸 경우 등. 웹뷰에서 [url](리다이렉트를 따라간 뒤
+/// HTML 이 온 최종 주소)을 열어 웹이 처리하게 한다. 처음 받으려던 주소를 다시 열면 같은 받기가 되풀이될 수 있다.
 final class OpenInWebView extends DownloadOutcome {
-  const OpenInWebView();
+  const OpenInWebView(this.url);
+  final Uri url;
 }
 
-/// 연결 실패 · 시간 초과 · 저장 실패 등. 일반 실패 안내를 띄운다.
+/// 연결 실패 · 시간 초과 · 저장 실패 · 실패 응답(HTML 오류 페이지 포함) 등. 일반 실패 안내를 띄운다.
 final class DownloadFailed extends DownloadOutcome {
-  const DownloadFailed(this.error);
+  const DownloadFailed(this.error, [this.stack]);
   final Object error;
+  final StackTrace? stack;
 }
 
 const downloadFailedMessage = '파일을 받지 못했어요. 잠시 뒤 다시 시도해 주세요.';
 
-/// 급여 PDF 만드는 데 웹 라우트가 20초까지 기다린다. 그보다 조금 넉넉하게.
+/// 응답 헤더가 올 때까지의 제한. 급여 PDF 만드는 데 웹 라우트가 20초까지 기다린다. 그보다 조금 넉넉하게.
 const downloadTimeout = Duration(seconds: 30);
+
+/// 본문을 받는 동안 이만큼 아무 데이터도 오지 않으면 실패로 본다. 전체 시간으로 끊지 않아 큰 스캔본도 받을 수 있다.
+const downloadIdleTimeout = Duration(seconds: 15);
+
+/// 저장할 파일 이름의 최대 길이(UTF-8 바이트). 운영체제 한계 255바이트보다 여유 있게.
+const _maxFileNameBytes = 200;
 
 /// 앱이 직접 받아야 하는 S3 서명 주소인지. https 이고, S3(amazonaws.com) 호스트이며, 서명 값이 붙은 주소만.
 /// 그 밖의 다른 호스트 주소는 지금처럼 바깥 앱 · 브라우저로 연다.
@@ -68,6 +77,9 @@ String fileNameFrom(String? contentDisposition, Uri url, String fallback) {
         name = Uri.decodeComponent(extended.group(2)!.trim());
       } on ArgumentError {
         name = null;
+      } on FormatException {
+        // 퍼센트 인코딩은 맞지만 UTF-8 이 깨졌다. filename="..." 로 넘어간다.
+        name = null;
       }
     }
     name ??= RegExp(
@@ -83,8 +95,29 @@ String fileNameFrom(String? contentDisposition, Uri url, String fallback) {
     final last = url.pathSegments.isEmpty ? '' : url.pathSegments.last;
     name = last.contains('.') ? last : null;
   }
-  final safe = (name ?? '').replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_').trim();
-  return safe.isEmpty || safe == '.' || safe == '..' ? fallback : safe;
+  final safe = (name ?? '')
+      .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_')
+      .trim();
+  if (safe.isEmpty || safe == '.' || safe == '..') return fallback;
+  return _limitBytes(safe, _maxFileNameBytes);
+}
+
+/// [name] 이 [maxBytes] 를 넘으면 확장자는 남기고 앞부분을 글자 단위로 자른다(한글 한 글자 = 3바이트).
+String _limitBytes(String name, int maxBytes) {
+  if (utf8.encode(name).length <= maxBytes) return name;
+  final dot = name.lastIndexOf('.');
+  final ext = dot > 0 && name.length - dot <= 10 ? name.substring(dot) : '';
+  final budget = maxBytes - utf8.encode(ext).length;
+  final stem = StringBuffer();
+  var used = 0;
+  for (final rune in name.substring(0, name.length - ext.length).runes) {
+    final char = String.fromCharCode(rune);
+    final size = utf8.encode(char).length;
+    if (used + size > budget) break;
+    stem.write(char);
+    used += size;
+  }
+  return '$stem$ext';
 }
 
 /// 받은 응답이 사용자에게 보일 실패 글자인지(급여 PDF 라우트: 4xx · 5xx 의 text/plain).
@@ -92,7 +125,9 @@ bool isMessageResponse(int status, String? contentType) =>
     status != 200 && (contentType ?? '').toLowerCase().startsWith('text/plain');
 
 /// [url] 을 받아 [directory] 에 저장한다. [cookie] 가 있으면 Cookie 헤더로 싣는다(같은 호스트의 급여 PDF).
-/// 리다이렉트는 따라간다. 결과는 늘 [DownloadOutcome] 하나이고 예외를 던지지 않는다.
+/// 리다이렉트는 따라간다. 출처가 바뀌는 리다이렉트에서는 Dart HttpClient 가 Cookie 헤더를 떼고 넘긴다(테스트로 고정).
+/// 응답 헤더까지는 [timeout], 본문은 [idleTimeout] 동안 데이터가 없을 때만 실패로 본다.
+/// 결과는 늘 [DownloadOutcome] 하나이고 예외를 던지지 않는다.
 Future<DownloadOutcome> downloadFile(
   Uri url, {
   required Directory directory,
@@ -101,9 +136,11 @@ Future<DownloadOutcome> downloadFile(
   String? userAgent,
   HttpClient Function()? clientFactory,
   Duration timeout = downloadTimeout,
+  Duration idleTimeout = downloadIdleTimeout,
 }) async {
   final client = (clientFactory ?? HttpClient.new)();
   try {
+    await _removeOldDownloads(directory);
     return await _download(
       client,
       url,
@@ -111,11 +148,25 @@ Future<DownloadOutcome> downloadFile(
       fallbackName: fallbackName,
       cookie: cookie,
       userAgent: userAgent,
-    ).timeout(timeout);
-  } catch (e) {
-    return DownloadFailed(e);
+      timeout: timeout,
+      idleTimeout: idleTimeout,
+    );
+  } catch (e, s) {
+    return DownloadFailed(e, s);
   } finally {
     client.close(force: true);
+  }
+}
+
+/// 지난번에 받은 파일(`download-*` 폴더)을 지운다. 급여 PDF 가 임시 폴더에 쌓이지 않게. 공유 시트는 파일을 자기 캐시로
+/// 복사해 가므로 지난 파일을 지워도 된다. 지우지 못하면 넘어간다.
+Future<void> _removeOldDownloads(Directory directory) async {
+  if (!await directory.exists()) return;
+  await for (final entry in directory.list()) {
+    final name = entry.uri.pathSegments.where((s) => s.isNotEmpty).last;
+    if (entry is Directory && name.startsWith('download-')) {
+      await entry.delete(recursive: true).catchError((_) => entry);
+    }
   }
 }
 
@@ -126,42 +177,50 @@ Future<DownloadOutcome> _download(
   required String fallbackName,
   String? cookie,
   String? userAgent,
+  required Duration timeout,
+  required Duration idleTimeout,
 }) async {
-  final request = await client.getUrl(url);
+  final request = await client.getUrl(url).timeout(timeout);
   if (cookie != null && cookie.isNotEmpty) {
     request.headers.set(HttpHeaders.cookieHeader, cookie);
   }
   if (userAgent != null) {
     request.headers.set(HttpHeaders.userAgentHeader, userAgent);
   }
-  final response = await request.close();
+  final response = await request.close().timeout(timeout);
   final status = response.statusCode;
   final contentType = response.headers.value(HttpHeaders.contentTypeHeader);
   final disposition = response.headers.value('content-disposition');
+  // 본문은 전체 시간이 아니라 데이터가 끊긴 시간으로 끊는다.
+  final body = response.timeout(idleTimeout);
+  // 리다이렉트마다 직전 주소를 기준으로 상대 주소를 푼다.
+  var finalUrl = url;
+  for (final redirect in response.redirects) {
+    finalUrl = finalUrl.resolveUri(redirect.location);
+  }
 
   if (isMessageResponse(status, contentType)) {
-    final text = (await utf8.decodeStream(response)).trim();
+    final text = (await utf8.decodeStream(body)).trim();
     return DownloadMessage(text.isEmpty ? downloadFailedMessage : text);
   }
-  if ((contentType ?? '').toLowerCase().startsWith('text/html')) {
-    await response.drain<void>();
-    return const OpenInWebView();
+  final isHtml = (contentType ?? '').toLowerCase().startsWith('text/html');
+  if (isHtml && status == 200) {
+    await body.drain<void>();
+    return OpenInWebView(finalUrl);
   }
   if (status != 200) {
-    await response.drain<void>();
+    // 502 · 504 같은 HTML 오류 페이지도 여기로 온다. 웹뷰로 넘기면 오류 페이지가 화면을 덮는다.
+    await body.drain<void>();
     return DownloadFailed(HttpException('응답 $status', uri: url));
   }
 
-  final finalUrl = response.redirects.isEmpty
-      ? url
-      : url.resolveUri(response.redirects.last.location);
   final name = fileNameFrom(disposition, finalUrl, fallbackName);
   // 받을 때마다 새 폴더에 둔다. 같은 이름의 지난 파일을 덮어쓰다 공유 중인 파일이 바뀌지 않게.
   final folder = await directory.createTemp('download-');
   final file = File('${folder.path}/$name');
   final sink = file.openWrite();
   try {
-    await response.pipe(sink);
+    await body.pipe(sink);
   } catch (e) {
     await sink.close().catchError((_) {});
     rethrow;

@@ -305,6 +305,15 @@ class _WebScreenState extends State<WebScreen> {
   bool _splashGone = false;
   // 파일을 받는 중이면 또 누른 것은 무시한다(같은 파일을 두 번 받아 공유 시트가 겹치지 않게).
   bool _downloading = false;
+  // 웹뷰의 이동 · 받기를 앱이 가로챈 때. 바로 뒤 오는 main frame 오류는 가로채기 때문이라 오류 화면을 띄우지 않는다.
+  DateTime? _interceptedAt;
+
+  bool _justIntercepted() {
+    final at = _interceptedAt;
+    return at != null &&
+        DateTime.now().difference(at) < const Duration(seconds: 3);
+  }
+
   // 시간 제한이 지난 뒤 온 요청은 권한을 새로 요청한다. 앞 요청을 기다리게 하면 안 된다:
   // geolocator(Android)는 권한 창이 취소되면(빈 결과) 앞 요청을 영영 끝내지 않아 앱을 다시 켤 때까지
   // 위치를 못 쓴다. 새 요청은 앞 요청의 결과 콜백을 덮어쓰므로, 창이 아직 떠 있었다면 그 창의 결과는
@@ -349,39 +358,43 @@ class _WebScreenState extends State<WebScreen> {
     required bool withCookies,
     required String fallbackName,
   }) async {
+    // 웹뷰가 받으려던 이동을 가로챘다. iOS 는 PDF 응답을 cancel 하면 main frame 오류(WebKitErrorDomain 102 등)를
+    // 보내므로, 바로 뒤 오는 오류는 연결 실패 화면으로 보지 않는다(onReceivedError).
+    _interceptedAt = DateTime.now();
     if (_downloading) return;
     _downloading = true;
     final messenger = ScaffoldMessenger.of(context);
     messenger.removeCurrentSnackBar();
     messenger.showSnackBar(
-      const SnackBar(
-        content: Text('파일을 받는 중이에요…'),
-        duration: downloadTimeout,
-      ),
+      const SnackBar(content: Text('파일을 받는 중이에요…'), duration: downloadTimeout),
     );
-    void fail(Object error, StackTrace? stack) {
+    void fail(
+      Object error,
+      StackTrace? stack, {
+      String context = '파일을 받지 못함',
+      String message = downloadFailedMessage,
+    }) {
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: error,
           stack: stack,
           library: 'main',
-          context: ErrorDescription('파일을 받지 못함'),
+          context: ErrorDescription(context),
         ),
       );
+      if (!mounted) return;
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text(downloadFailedMessage),
-          showCloseIcon: true,
-        ),
+        SnackBar(content: Text(message), showCloseIcon: true),
       );
     }
 
     try {
       String? cookie;
       if (withCookies) {
-        final cookies = await CookieManager.instance().getCookies(
-          url: WebUri.uri(url),
-        );
+        // 쿠키 저장소가 답하지 않으면 받기가 끝나지 않고 중복 탭 막기도 풀리지 않으므로 제한을 건다.
+        final cookies = await CookieManager.instance()
+            .getCookies(url: WebUri.uri(url))
+            .timeout(const Duration(seconds: 5));
         cookie = cookies.map((c) => '${c.name}=${c.value}').join('; ');
       }
       final outcome = await downloadFile(
@@ -395,26 +408,41 @@ class _WebScreenState extends State<WebScreen> {
       messenger.hideCurrentSnackBar();
       switch (outcome) {
         case DownloadedFile(:final path, :final mimeType):
-          await SharePlus.instance.share(
-            ShareParams(files: [XFile(path, mimeType: mimeType)]),
-          );
+          // 공유 시트는 모달이라 중복 탭이 들어오지 않는다. 시트가 닫히지 않아도 다음 받기가 막히지 않게 먼저 푼다.
+          _downloading = false;
+          try {
+            await SharePlus.instance.share(
+              ShareParams(files: [XFile(path, mimeType: mimeType)]),
+            );
+          } catch (e, s) {
+            fail(
+              e,
+              s,
+              context: '받은 파일의 공유 화면을 열지 못함',
+              message: '파일은 받았지만 공유 화면을 열지 못했어요. 잠시 뒤 다시 시도해 주세요.',
+            );
+          }
         case DownloadMessage(:final message):
           messenger.showSnackBar(
             SnackBar(content: Text(message), showCloseIcon: true),
           );
-        case OpenInWebView():
-          // 접속이 끝나 로그인 화면이 온 경우 등. 웹뷰가 그 주소를 열면 웹이 로그인 뒤 상세로 돌려보낸다.
-          await _controller?.loadUrl(
-            urlRequest: URLRequest(url: WebUri.uri(url)),
-          );
-        case DownloadFailed(:final error):
-          fail(error, null);
+        case OpenInWebView(url: final page):
+          // 접속이 끝나 로그인 화면이 온 경우 등. HTML 이 온 최종 주소(로그인 · 상세)를 연다. 웹이 로그인 뒤 돌려보낸다.
+          // 쿠키를 싣는 같은 출처 받기에서만 이렇게 한다. S3 등 다른 곳의 HTML 은 받기 실패로 본다
+          // (그 주소를 다시 열면 같은 가로채기로 되풀이된다).
+          if (withCookies && isTrustedOrigin(page.origin, _base)) {
+            await _controller?.loadUrl(
+              urlRequest: URLRequest(url: WebUri.uri(page)),
+            );
+          } else {
+            fail(StateError('파일 대신 화면이 옴: $page'), null);
+          }
+        case DownloadFailed(:final error, :final stack):
+          fail(error, stack);
       }
     } catch (e, s) {
-      if (mounted) {
-        messenger.hideCurrentSnackBar();
-        fail(e, s);
-      }
+      if (mounted) messenger.hideCurrentSnackBar();
+      fail(e, s);
     } finally {
       _downloading = false;
     }
@@ -605,7 +633,8 @@ class _WebScreenState extends State<WebScreen> {
                       onReceivedError: (_, request, error) {
                         _refresh.endRefreshing();
                         if (request.isForMainFrame == false ||
-                            error.type == WebResourceErrorType.CANCELLED) {
+                            error.type == WebResourceErrorType.CANCELLED ||
+                            _justIntercepted()) {
                           return;
                         }
                         setState(() => _failed = true);
