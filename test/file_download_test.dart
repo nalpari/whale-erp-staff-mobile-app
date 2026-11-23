@@ -250,28 +250,51 @@ void main() {
         expect(seenCookies, ['access=1', 'access=1']);
       });
 
-      test('다른 출처로 리다이렉트하면 쿠키를 떼고 넘긴다(로그인 쿠키가 새지 않는다)', () async {
+      test('다른 호스트로 리다이렉트하면 따라가지 않고 실패한다(로그인 쿠키도 안 간다)', () async {
         final outcome = await downloadFile(
           at('/cross'),
           directory: dir,
           fallbackName: 'f',
           cookie: 'access=1; refresh=2',
         );
-        expect(outcome, isA<DownloadedFile>());
+        expect(outcome, isA<DownloadFailed>());
         expect(seenCookies, ['access=1; refresh=2']);
-        expect(otherCookies, [null]);
+        expect(otherCookies, isEmpty);
       });
 
-      test('같은 호스트의 다른 포트로 리다이렉트해도 쿠키를 떼고 넘긴다', () async {
+      test('같은 호스트의 다른 포트로 리다이렉트해도 다른 출처라 따라가지 않는다', () async {
         final outcome = await downloadFile(
           at('/same-host'),
           directory: dir,
           fallbackName: 'f',
           cookie: 'access=1; refresh=2',
         );
-        expect(outcome, isA<DownloadedFile>());
+        expect(outcome, isA<DownloadFailed>());
         expect(seenCookies, ['access=1; refresh=2']);
-        expect(otherCookies, [null]);
+        expect(otherCookies, isEmpty);
+      });
+
+      test('받을 파일이 상한을 넘으면 멈추고 반쯤 받은 파일을 남기지 않는다', () async {
+        final big = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => big.close(force: true));
+        big.listen((req) async {
+          req.response.headers.contentType = ContentType('application', 'pdf');
+          final chunk = List.filled(1024 * 1024, 0);
+          for (var i = 0; i <= maxFileBytes ~/ chunk.length; i++) {
+            req.response.add(chunk);
+          }
+          await req.response.close().catchError((_) {});
+        });
+        final outcome = await downloadFile(
+          Uri.parse('http://${big.address.host}:${big.port}/big.pdf'),
+          directory: dir,
+          fallbackName: 'f',
+        );
+        expect(outcome, isA<DownloadFailed>());
+        expect(
+          dir.listSync().where((e) => e.path.contains('download-')),
+          isEmpty,
+        );
       });
 
       test('같은 출처 안의 리다이렉트는 쿠키를 그대로 싣는다', () async {
@@ -453,5 +476,38 @@ void main() {
       'HttpException: 응답 503, uri = https://b.s3.ap-northeast-2.amazonaws.com/c.pdf?… 뒤',
     );
     expect(redactUrls('쿼리 없는 https://a.b/c'), '쿼리 없는 https://a.b/c');
+  });
+
+  test('급여명세서 PDF 라우트는 웹 주소와 같은 출처의 /pay/<id>/pdf 만', () {
+    final base = Uri.parse('https://staff-dev.whaleerp.co.kr');
+    expect(
+      isPayslipPdf(
+        Uri.parse('https://staff-dev.whaleerp.co.kr/pay/12/pdf'),
+        base,
+      ),
+      isTrue,
+    );
+    expect(
+      isPayslipPdf(Uri.parse('https://staff-dev.whaleerp.co.kr/pay/12'), base),
+      isFalse,
+    );
+    expect(
+      isPayslipPdf(
+        Uri.parse('https://staff-dev.whaleerp.co.kr/pay/12/pdf/x'),
+        base,
+      ),
+      isFalse,
+    );
+    expect(
+      isPayslipPdf(Uri.parse('https://evil.example.com/pay/12/pdf'), base),
+      isFalse,
+    );
+    expect(
+      isPayslipPdf(
+        Uri.parse('http://staff-dev.whaleerp.co.kr/pay/12/pdf'),
+        base,
+      ),
+      isFalse,
+    );
   });
 }

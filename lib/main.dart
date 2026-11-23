@@ -617,6 +617,20 @@ class _WebScreenState extends State<WebScreen> {
                           },
                       shouldOverrideUrlLoading: (controller, action) async {
                         final uri = action.request.url;
+                        // 급여 PDF 「명세서 내보내기」: 실패 응답(평문 오류 · 로그인 이동)은 웹뷰가 페이지로 열어 오류 글이
+                        // 화면을 덮으므로, 웹뷰가 이동하기 전에 앱이 쿠키를 실어 받는다. 성공 PDF 도 한 번만 만들어진다.
+                        if (uri != null &&
+                            action.isForMainFrame &&
+                            isPayslipPdf(uri, _base)) {
+                          unawaited(
+                            _receiveFile(
+                              uri,
+                              withCookies: true,
+                              fallbackName: '급여명세서.pdf',
+                            ),
+                          );
+                          return NavigationActionPolicy.CANCEL;
+                        }
                         if (uri == null ||
                             !action.isForMainFrame ||
                             isInApp(uri, _base)) {

@@ -63,6 +63,12 @@ bool isSignedDownload(Uri uri) {
       (params.contains('x-amz-signature') || params.contains('signature'));
 }
 
+/// 웹의 급여명세서 PDF 라우트(`/pay/<id>/pdf`)인지. 웹 주소와 같은 출처일 때만.
+/// 이 라우트는 성공하면 첨부 PDF 를 주지만, 실패하면 평문 오류(404 · 409 · 502)나 로그인 이동을 준다. 그런 응답은
+/// 웹뷰가 다운로드가 아니라 페이지로 열어 오류 글이 화면을 덮으므로, 웹뷰가 이동하기 전에 앱이 가로채 받는다.
+bool isPayslipPdf(Uri uri, Uri base) =>
+    isSameOrigin(uri, base) && RegExp(r'^/pay/[^/]+/pdf/?$').hasMatch(uri.path);
+
 /// `Content-Disposition` 에서 파일 이름을 꺼낸다. `filename*=UTF-8''...` 를 먼저 보고, 없으면 `filename="..."`.
 /// 둘 다 없으면 주소의 마지막 경로, 그것도 쓸 수 없으면 [fallback]. 경로 구분자 같은 위험한 글자는 지운다.
 String fileNameFrom(String? contentDisposition, Uri url, String fallback) {
@@ -175,6 +181,24 @@ Future<void> _removeOldDownloads(Directory directory) async {
   }
 }
 
+/// 받을 파일의 상한(급여명세서 · 근로계약서는 수 MB 안쪽). 넘으면 받기를 멈추고 실패로 본다.
+const maxFileBytes = 50 * 1024 * 1024;
+
+/// 평문 오류 글의 상한. 넘으면 실패로 본다.
+const maxMessageBytes = 64 * 1024;
+
+/// [body] 가 [limit] 바이트를 넘으면 오류로 끊는다.
+Stream<List<int>> _capped(Stream<List<int>> body, int limit) {
+  var received = 0;
+  return body.map((chunk) {
+    received += chunk.length;
+    if (received > limit) {
+      throw HttpException('응답이 너무 큼(${limit ~/ 1024}KB 초과)');
+    }
+    return chunk;
+  });
+}
+
 /// 파일 받기에서 따라갈 리다이렉트 수. HttpClient 기본값과 같다.
 const maxDownloadRedirects = 5;
 
@@ -220,8 +244,9 @@ Future<DownloadOutcome> _download(
         throw const HttpException('파일 받기 리다이렉트가 너무 많음');
       }
       final next = finalUrl.resolve(location);
-      if (next.scheme != 'https' && next.scheme != 'http') {
-        throw HttpException('지원하지 않는 리다이렉트 스킴 ${next.scheme}');
+      // 이동은 처음 주소와 같은 출처(로그인 화면 등)나 S3 서명 주소로만 따라간다. 그 밖(사설망 · 다른 호스트)은 받지 않는다.
+      if (!isSameOrigin(next, url) && !isSignedDownload(next)) {
+        throw const HttpException('허용하지 않는 곳으로 리다이렉트됨');
       }
       finalUrl = next;
     }
@@ -233,7 +258,8 @@ Future<DownloadOutcome> _download(
   final body = response.timeout(idleTimeout);
 
   if (isMessageResponse(status, contentType)) {
-    final text = (await utf8.decodeStream(body)).trim();
+    final text = (await utf8.decodeStream(_capped(body, maxMessageBytes)))
+        .trim();
     return DownloadMessage(text.isEmpty ? downloadFailedMessage : text);
   }
   final isHtml = (contentType ?? '').toLowerCase().startsWith('text/html');
@@ -254,9 +280,11 @@ Future<DownloadOutcome> _download(
   final file = File('${folder.path}/$name');
   final sink = file.openWrite();
   try {
-    await body.pipe(sink);
+    await _capped(body, maxFileBytes).pipe(sink);
   } catch (e) {
     await sink.close().catchError((_) {});
+    // 반쯤 받은 파일은 남기지 않는다.
+    await folder.delete(recursive: true).catchError((_) => folder);
     rethrow;
   }
   return DownloadedFile(
