@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -233,6 +234,49 @@ Future<bool> allowGeolocation(
   Uri base,
   Future<bool> Function() ensurePermission,
 ) async => isTrustedOrigin(origin, base) && await ensurePermission();
+
+/// Android 뒤로 가기 때 웹에서 맨 위에 열린 `<dialog>`(바텀시트 등)를 닫는 스크립트. 닫았으면 true, 열린 게 없으면 false.
+/// 웹 바텀시트는 `showModal()` 로 열리고 웹 방문 기록에 남지 않아, 그대로 두면 뒤로 가기가 시트 대신 이전 페이지로 간다.
+/// 브라우저의 Esc 와 같게 `cancel` 이벤트를 보낸다 — 웹 시트는 onCancel 에서 preventDefault 하고 자기 열림 상태를 닫는다
+/// (상태를 쓰는 쪽 한 곳에서만 바꾸게). 아무도 막지 않은 일반 `<dialog>` 만 앱이 직접 close() 한다.
+const closeTopDialogScript = '''
+(() => {
+  const all = Array.from(document.querySelectorAll('dialog[open]'));
+  if (all.length === 0) return false;
+  // 모달(showModal)은 일반 dialog(show) 위에 뜬다. 열린 모달이 있으면 모달 가운데서 고른다.
+  let modals = [];
+  try { modals = all.filter((d) => d.matches(':modal')); } catch (_) {}
+  const opened = modals.length > 0 ? modals : all;
+  // 가장 나중에 연 시트가 맨 위다. 연 순서는 dialogOrderScript 가 남긴다(없으면 0). 같으면 DOM 에서 뒤의 것.
+  const seq = (d) => Number(d.dataset.whaleOpenedAt || 0);
+  const top = opened.reduce((a, b) => (seq(b) >= seq(a) ? b : a));
+  const event = new Event('cancel', { cancelable: true });
+  top.dispatchEvent(event);
+  if (!event.defaultPrevented && top.open) top.close();
+  return true;
+})()
+''';
+
+/// 페이지가 열릴 때 심는 스크립트. 시트(`<dialog>`)를 열 때마다 연 순서를 `data-whale-opened-at` 에 남긴다.
+/// `querySelectorAll` 은 DOM 순서라, DOM 에서 앞에 있는 시트를 나중에 열면 맨 위 시트를 고르지 못하기 때문이다.
+const dialogOrderScript = '''
+(() => {
+  if (typeof HTMLDialogElement === 'undefined' || window.__whaleDialogOrder !== undefined) return;
+  window.__whaleDialogOrder = 0;
+  const proto = HTMLDialogElement.prototype;
+  for (const name of ['showModal', 'show']) {
+    const original = proto[name];
+    if (typeof original !== 'function') continue;
+    proto[name] = function (...args) {
+      // 이미 열린 시트를 다시 열어도 브라우저는 맨 위로 올리지 않으므로, 닫혀 있다가 실제로 열렸을 때만 순서를 남긴다.
+      const wasOpen = this.open;
+      const result = original.apply(this, args);
+      if (!wasOpen && this.open) this.dataset.whaleOpenedAt = String(++window.__whaleDialogOrder);
+      return result;
+    };
+  }
+})();
+''';
 
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
 String appUserAgent(String version) => 'WhaleStaffApp/$version';
@@ -551,8 +595,62 @@ class _WebScreenState extends State<WebScreen> {
     if (guide != null) _showLocationGuide(guide);
   }
 
+  // 직전 뒤로 가기에서 닫기 스크립트가 시간을 넘긴 때. 웹뷰가 멈춰 매번 넘기면 뒤로 가기가 먹통이 되므로,
+  // 바로 이어서 또 누르면 스크립트를 건너뛰고 평소 뒤로 가기를 한다.
+  DateTime? _dialogTimedOutAt;
+  // 페이지(웹 방문 기록)가 바뀔 때마다 늘린다. 시간 초과 우회는 같은 페이지에서만 쓰고, 이전 페이지에서 시작한 호출이 늦게
+  // 시간을 넘겨도 새 페이지의 상태를 바꾸지 않게 한다.
+  int _page = 0;
+
+  /// 웹에 열린 `<dialog>` 가 있으면 닫고 true. 스크립트가 실패하면 false 로 보고 평소 뒤로 가기를 한다.
+  /// 시간이 넘으면(1초) 이 입력은 쓴 것으로 보고 true. 단 10초 안에 또 누르면 스크립트 없이 평소 뒤로 가기(false).
+  Future<bool> _closeWebDialog(InAppWebViewController controller) async {
+    final timedOutAt = _dialogTimedOutAt;
+    _dialogTimedOutAt = null;
+    if (timedOutAt != null &&
+        DateTime.now().difference(timedOutAt) < const Duration(seconds: 10)) {
+      return false;
+    }
+    final page = _page;
+    try {
+      // 시간이 넘어도 스크립트는 취소되지 않아 뒤늦게 시트를 닫을 수 있다. 그때 이 입력으로 이전 페이지 이동 · 앱 종료까지
+      // 하면 한 번 눌렀는데 두 가지가 일어나므로, 시간 초과면 이 입력을 쓴 것으로 본다(안 닫혔으면 한 번 더 누르면 된다).
+      final script = controller.evaluateJavascript(
+        source: closeTopDialogScript,
+      );
+      // 늦게라도 웹뷰가 답하면 멈춘 게 아니므로 우회를 풀어, 다음 뒤로 가기가 남은 시트를 다시 확인하게 한다.
+      unawaited(
+        script.then<void>((_) {
+          if (page == _page) _dialogTimedOutAt = null;
+        }, onError: (_) {}),
+      );
+      final closed = await script.timeout(
+        const Duration(seconds: 1),
+        onTimeout: () {
+          if (page == _page) _dialogTimedOutAt = DateTime.now();
+          return true;
+        },
+      );
+      return closed == true;
+    } catch (e, s) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: e,
+          stack: s,
+          library: 'main',
+          context: ErrorDescription('뒤로 가기 때 웹 시트를 닫지 못해 평소대로 뒤로 감'),
+        ),
+      );
+      return false;
+    }
+  }
+
   Future<void> _back() async {
     final controller = _controller;
+    final page = _page;
+    if (controller != null && await _closeWebDialog(controller)) return;
+    // 시트를 확인하는 사이 페이지가 바뀌었으면(SPA 이동) 이 입력으로 새 페이지 기록을 움직이지 않는다.
+    if (page != _page) return;
     if (controller != null && await controller.canGoBack()) {
       await controller.goBack();
     } else {
@@ -583,6 +681,14 @@ class _WebScreenState extends State<WebScreen> {
                   children: [
                     InAppWebView(
                       initialUrlRequest: URLRequest(url: WebUri(webUrl)),
+                      initialUserScripts: UnmodifiableListView([
+                        UserScript(
+                          source: dialogOrderScript,
+                          injectionTime:
+                              UserScriptInjectionTime.AT_DOCUMENT_START,
+                          forMainFrameOnly: true,
+                        ),
+                      ]),
                       initialSettings: InAppWebViewSettings(
                         applicationNameForUserAgent: appUserAgent(
                           widget.version,
@@ -692,6 +798,11 @@ class _WebScreenState extends State<WebScreen> {
                           mode: LaunchMode.externalApplication,
                         );
                         return NavigationActionPolicy.CANCEL;
+                      },
+                      // 페이지가 바뀌면(SPA 이동 포함) 뒤로 가기 시간 초과 우회를 없앤다 — 새 페이지의 시트는 다시 확인한다.
+                      onUpdateVisitedHistory: (_, _, _) {
+                        _page++;
+                        _dialogTimedOutAt = null;
                       },
                       onLoadStop: (controller, _) async {
                         // 앱이 연 이동이 끝났으니 가로채기 예외 표시를 지운다(Android 는 loadUrl 에 shouldOverrideUrlLoading 을 안 부른다).
