@@ -47,7 +47,7 @@
 | 항목 | 상태 | 근거 |
 | --- | --- | --- |
 | viewport (`viewportFit`, `themeColor`) | ❌ | `src/app/layout.tsx`에 `export const viewport`가 없다. 앱은 Flutter `SafeArea`가 노치를 피하므로 급하지는 않다 |
-| 웹뷰 감지 · 브리지 모듈 | ❌ | 앱 쪽 브리지는 생겼다(2026-11-20, 약속은 [native-bridge.md](native-bridge.md)). 웹에는 `WhaleStaffApp/`를 감지하는 코드도, `native-bridge.ts` 모듈도 아직 없다 |
+| 웹뷰 감지 · 브리지 모듈 | 🟡 | 앱 쪽 브리지는 생겼다(2026-11-20, 약속은 [native-bridge.md](native-bridge.md)). 웹 `src/lib/native-bridge.ts`(앱 감지 · 준비 대기 · 10초 시간 제한 · 답 검사)는 웹 PR #87로 올라가 머지를 기다린다(2026-11-23). 아직 이 모듈을 쓰는 웹 화면은 없다 |
 | 위치 조작 감지 연결 | ❌ | `check-in-screen.tsx`가 아직 `mocked: false`로 고정돼 있다 |
 | 다운로드 · 뒤로 가기 브리지 | ❌ | 없음. 급여 PDF 라우트(`pay/[payslipId]/pdf/route.ts`)는 실패하면 평문 글자를 돌려줘 앱 화면을 덮을 수 있다. 계약서 라우트처럼 상세로 돌려보내게 바꾸는 것을 검토 |
 | `assetlinks.json` · `apple-app-site-association` | ❌ | `public/`에 없다. 번들 ID를 확정한 뒤에 만든다 |
@@ -69,7 +69,7 @@
 1. **1절 코드 반영**: 끝났다(2026-11-20). 운영 URL 기본값 전환만 도메인이 열린 뒤에 한다
 2. **1단계 마무리 확인**: 실기기에서 로그인 → 앱 강제 종료 → 재실행 후 로그인 유지(쿠키 flush), 키보드와 Dock, 서명 패드와 당겨서 새로고침 충돌
 3. **위치 권한 (2단계)**: 코드는 들어갔다(2026-11-20). Android는 허용 · 거부 경로만 에뮬레이터에서 확인했고, 정확한 위치 재요청 창과 설정 안내는 아직 못 봤다. iOS는 실기기 확인이 남았다. 웹 geolocation으로 출퇴근 화면을 지금 앱 안에서 테스트할 수 있다. iOS WKWebView는 OS 권한과 별도로 사이트 위치 확인 창을 띄울 수 있어, 실기기에서 몇 번 뜨는지 본다(5번 네이티브 측정으로 바뀌면 사라진다)
-4. **JS 브리지 골격**: 앱 쪽은 끝났다(2026-11-20). `lib/native_bridge.dart`가 `WEB_URL`과 같은 출처(https · 호스트 · 포트)의 맨 위 화면 호출만 받고, 답은 `{ok, data}` / `{ok: false, error}` 하나로 맞췄다. 첫 기능은 `appInfo`. 약속은 [native-bridge.md](native-bridge.md). **남은 일: 웹에 `native-bridge.ts`**(UA `WhaleStaffApp/`으로 앱 안 판별, `callHandler`를 한 모듈에 모음). 5번 위치 측정을 붙일 때 같이 만드는 게 자연스럽다
+4. **JS 브리지 골격**: 앱 쪽은 끝났다(2026-11-20). `lib/native_bridge.dart`가 `WEB_URL`과 같은 출처(https · 호스트 · 포트)의 맨 위 화면 호출만 받고, 답은 `{ok, data}` / `{ok: false, error}` 하나로 맞췄다. 첫 기능은 `appInfo`. 약속은 [native-bridge.md](native-bridge.md). 웹 쪽 `native-bridge.ts`는 웹 PR #87(머지 대기)이고, 약속 문서를 웹에 맞춰 고쳤다(2026-11-23: `data` 칸 필수, 웹은 호출마다 10초까지 기다림, User-Agent 표식 위치, Android 준비 표시). 5번 위치 측정은 앱 안에서 10초보다 짧게 답해야 한다
 5. **위치 측정 · 조작 감지**: 핸들러가 한 번 잰 좌표와 조작 여부(Android `isMock()`, API 31+ · 24~30은 `isFromMockProvider()` / iOS `isSimulatedBySoftware`)를 함께 넘긴다. 웹 `check-in-screen.tsx`는 앱 안이면 `navigator.geolocation` 대신 이 값으로 좌표와 `mocked`를 채운다
 6. **파일 받기**: 급여 PDF는 `onDownloadStartRequest`에서 웹뷰 쿠키를 실어 받고, 계약서는 S3 호스트로 가는 이동을 가로채 받는다. 둘 다 저장 후 공유 시트
 7. 3단계 이후(딥링크 · 푸시 · 강제 업데이트)는 번들 ID 확정과 api 팀 협의가 먼저다. 협의 일정을 잡아 둔다
