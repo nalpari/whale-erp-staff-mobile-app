@@ -69,8 +69,11 @@ bool isSignedDownload(Uri uri) {
 /// 웹의 급여명세서 PDF 라우트(`/pay/<id>/pdf`)인지. 웹 주소와 같은 출처일 때만.
 /// 이 라우트는 성공하면 첨부 PDF 를 주지만, 실패하면 평문 오류(404 · 409 · 502)나 로그인 이동을 준다. 그런 응답은
 /// 웹뷰가 다운로드가 아니라 페이지로 열어 오류 글이 화면을 덮으므로, 웹뷰가 이동하기 전에 앱이 가로채 받는다.
+/// 로그인 쿠키를 싣는 받기라 https 일 때만(WEB_URL 을 http 로 띄운 개발 환경에서도 평문으로 쿠키를 보내지 않는다).
 bool isPayslipPdf(Uri uri, Uri base) =>
-    isSameOrigin(uri, base) && RegExp(r'^/pay/[^/]+/pdf/?$').hasMatch(uri.path);
+    uri.scheme == 'https' &&
+    isSameOrigin(uri, base) &&
+    RegExp(r'^/pay/[^/]+/pdf/?$').hasMatch(uri.path);
 
 /// `Content-Disposition` 에서 파일 이름을 꺼낸다. `filename*=UTF-8''...` 를 먼저 보고, 없으면 `filename="..."`.
 /// 둘 다 없으면 주소의 마지막 경로, 그것도 쓸 수 없으면 [fallback]. 경로 구분자 같은 위험한 글자는 지운다.
