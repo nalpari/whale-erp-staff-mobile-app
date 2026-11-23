@@ -234,6 +234,22 @@ Future<bool> allowGeolocation(
   Future<bool> Function() ensurePermission,
 ) async => isTrustedOrigin(origin, base) && await ensurePermission();
 
+/// Android 뒤로 가기 때 웹에서 맨 위에 열린 `<dialog>`(바텀시트 등)를 닫는 스크립트. 닫았으면 true, 열린 게 없으면 false.
+/// 웹 바텀시트는 `showModal()` 로 열리고 웹 방문 기록에 남지 않아, 그대로 두면 뒤로 가기가 시트 대신 이전 페이지로 간다.
+/// 브라우저의 Esc 와 같게 `cancel` 이벤트를 보낸다 — 웹 시트는 onCancel 에서 preventDefault 하고 자기 열림 상태를 닫는다
+/// (상태를 쓰는 쪽 한 곳에서만 바꾸게). 아무도 막지 않은 일반 `<dialog>` 만 앱이 직접 close() 한다.
+const closeTopDialogScript = '''
+(() => {
+  const opened = Array.from(document.querySelectorAll('dialog[open]'));
+  const top = opened[opened.length - 1];
+  if (!top) return false;
+  const event = new Event('cancel', { cancelable: true });
+  top.dispatchEvent(event);
+  if (!event.defaultPrevented && top.open) top.close();
+  return true;
+})()
+''';
+
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
 String appUserAgent(String version) => 'WhaleStaffApp/$version';
 
@@ -551,8 +567,29 @@ class _WebScreenState extends State<WebScreen> {
     if (guide != null) _showLocationGuide(guide);
   }
 
+  /// 웹에 열린 `<dialog>` 가 있으면 닫고 true. 스크립트가 실패하거나 늦으면(1초) false 로 보고 평소 뒤로 가기를 한다.
+  Future<bool> _closeWebDialog(InAppWebViewController controller) async {
+    try {
+      final closed = await controller
+          .evaluateJavascript(source: closeTopDialogScript)
+          .timeout(const Duration(seconds: 1));
+      return closed == true;
+    } catch (e, s) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: e,
+          stack: s,
+          library: 'main',
+          context: ErrorDescription('뒤로 가기 때 웹 시트를 닫지 못해 평소대로 뒤로 감'),
+        ),
+      );
+      return false;
+    }
+  }
+
   Future<void> _back() async {
     final controller = _controller;
+    if (controller != null && await _closeWebDialog(controller)) return;
     if (controller != null && await controller.canGoBack()) {
       await controller.goBack();
     } else {
