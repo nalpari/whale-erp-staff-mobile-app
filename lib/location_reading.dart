@@ -37,6 +37,10 @@ const measureTimeLimit = Duration(seconds: 8);
 /// 위치 서비스) 최대 4초 = 73초로, 웹이 기다리는 75초 안에 든다.
 const permissionTimeLimit = Duration(seconds: 60);
 
+/// 권한 확인을 시작한 뒤 권한 창을 새로 띄워도 되는 시간. [permissionTimeLimit] 보다 조금 짧게 두어, 웹에 시간 초과로
+/// 답한 뒤에 창이 뜨지 않게 한다.
+const permissionAskWindow = Duration(seconds: 58);
+
 /// 잰 뒤에 정확도 · 권한 · 위치 서비스를 한 번 더 읽을 때의 제한.
 const _followUpTimeLimit = Duration(seconds: 2);
 

@@ -125,6 +125,42 @@ void main() {
     final precise = LocationAccuracyStatus.precise;
     final reduced = LocationAccuracyStatus.reduced;
 
+    // 부를 때마다 [step] 씩 흐르는 가짜 시계.
+    DateTime Function() ticking(Duration step) {
+      var at = DateTime(2026, 11, 23, 9);
+      return () => at = at.add(step);
+    }
+
+    testWidgets('확인이 늦게 끝나 창을 띄울 시간이 지났으면 권한 창을 띄우지 않고 failed', (tester) async {
+      final access = await ensureLocationAccess(
+        check: counted('check', LocationPermission.denied),
+        request: counted('request', LocationPermission.whileInUse),
+        accuracy: counted('accuracy', precise),
+        serviceEnabled: counted('service', true),
+        askWithin: const Duration(seconds: 58),
+        now: ticking(const Duration(seconds: 59)),
+      );
+      expect(access, LocationAccess.failed);
+      expect(called('request'), 0);
+      expect(tester.takeException(), isA<TimeoutException>());
+    });
+
+    test('앞 단계가 늦어 창을 띄울 시간이 지났으면 정확한 위치를 다시 묻지 않고 approximate', () async {
+      var asked = false;
+      final access = await ensureLocationAccess(
+        check: counted('check', LocationPermission.whileInUse),
+        request: counted('request', LocationPermission.whileInUse),
+        accuracy: counted('accuracy', reduced),
+        serviceEnabled: counted('service', true),
+        onAskPrecise: () => asked = true,
+        askWithin: const Duration(seconds: 58),
+        now: ticking(const Duration(seconds: 59)),
+      );
+      expect(access, LocationAccess.approximate);
+      expect(called('request'), 0);
+      expect(asked, isFalse);
+    });
+
     test('이미 정확한 위치까지 허락이면 묻지 않고 precise', () async {
       for (final p in [
         LocationPermission.whileInUse,

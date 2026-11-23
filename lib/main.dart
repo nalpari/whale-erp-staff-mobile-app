@@ -56,9 +56,15 @@ Future<LocationAccess> ensureLocationAccess({
   bool askPrecise = true,
   VoidCallback? onAskPrecise,
   Duration timeout = const Duration(seconds: 60),
+  Duration askWithin = permissionAskWindow,
+  DateTime Function() now = DateTime.now,
   bool? onIOS,
 }) async {
   final isIOS = onIOS ?? defaultTargetPlatform == TargetPlatform.iOS;
+  // 권한 창(처음 요청 · 정확한 위치 재요청)은 확인을 시작하고 [askWithin] 안에서만 새로 띄운다. 그 뒤에는 부르는 쪽
+  // (measureLocation 의 permissionTimeLimit)이 이미 시간 초과로 답했을 수 있어, 늦게 뜬 창이 웹 결과와 어긋난다.
+  final startedAt = now();
+  bool mayAsk() => now().difference(startedAt) < askWithin;
   Future<T> guarded<T>(
     Future<T> Function() call,
     T fallback,
@@ -105,6 +111,15 @@ Future<LocationAccess> ensureLocationAccess({
     null,
     '위치 권한을 확인하지 못해 웹의 위치 요청을 거부함',
   );
+  if (current == LocationPermission.denied && !mayAsk()) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: TimeoutException('권한 확인이 늦게 끝나 권한 창을 띄우지 않음', askWithin),
+        library: 'main',
+      ),
+    );
+    return LocationAccess.failed;
+  }
   final justAsked = current == LocationPermission.denied;
   final permission = justAsked
       ? await guarded<LocationPermission?>(
@@ -129,6 +144,8 @@ Future<LocationAccess> ensureLocationAccess({
   if (first != LocationAccess.approximate || !askPrecise || justAsked) {
     return first;
   }
+  // 앞 단계가 늦어져 창을 띄울 시간이 지났으면 묻지 않고 대략적 위치로 둔다(다음 요청 때 다시 묻는다).
+  if (!mayAsk()) return first;
 
   onAskPrecise?.call();
   final again = await guarded<LocationPermission?>(

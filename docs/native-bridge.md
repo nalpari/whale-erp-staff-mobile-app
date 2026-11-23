@@ -43,6 +43,14 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 | `unavailable` | 앱 밖이거나, 브리지가 없거나, 앱에 없는 기능이다. 앱에 없는 이름으로 부르면 앱까지 오지 않고 `null`이 돌아온다(웹뷰 플러그인 동작) |
 | `malformed` | 앱의 답이 위 표와 다르다(`data` 칸이 없음, 모르는 오류 코드, `data` 모양이 기능 약속과 다름) |
 
+## 같은 출처 iframe (웹이 지킬 것)
+
+앱은 브리지를 웹 주소(`WEB_URL`)의 맨 위 화면에만 넣고, 다른 출처의 iframe에서는 `callHandler`가 아예 없다. 하지만 **같은 출처**의 iframe은 브라우저 규칙상 맨 위 화면의 JS(`window.top.flutter_inappwebview`)에 접근할 수 있어서, 앱은 그 호출을 맨 위 화면에서 온 것과 구분하지 못한다. 그런 iframe 안에서 믿을 수 없는 스크립트가 돌면 위치 같은 앱 기능을 불러 결과를 가져갈 수 있다.
+
+- 웹은 `WEB_URL`과 같은 출처에서 믿을 수 없는 콘텐츠(사용자가 올린 HTML, 외부 위젯 등)를 iframe으로 띄우지 않는다.
+- 꼭 띄워야 하면 다른 출처에서 서빙하거나, `sandbox`에 `allow-same-origin`을 넣지 않고 띄운다. 그러면 iframe이 다른 출처로 취급돼 브리지에 닿지 못한다.
+- 2026-11-23 현재 웹에 같은 출처의 외부 콘텐츠 iframe은 없다(주소 검색의 Daum 우편번호는 다른 출처).
+
 ## 시간 제한 (앱 기능을 만들 때 지킬 것)
 
 - 웹은 호출마다 **10초**까지 기다리고, 넘으면 `failed`로 끝낸다. 앱이 그 뒤에 답해도 버려진다.
