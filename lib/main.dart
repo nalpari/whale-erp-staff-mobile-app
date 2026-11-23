@@ -598,6 +598,9 @@ class _WebScreenState extends State<WebScreen> {
   // 직전 뒤로 가기에서 닫기 스크립트가 시간을 넘긴 때. 웹뷰가 멈춰 매번 넘기면 뒤로 가기가 먹통이 되므로,
   // 바로 이어서 또 누르면 스크립트를 건너뛰고 평소 뒤로 가기를 한다.
   DateTime? _dialogTimedOutAt;
+  // 페이지(웹 방문 기록)가 바뀔 때마다 늘린다. 시간 초과 우회는 같은 페이지에서만 쓰고, 이전 페이지에서 시작한 호출이 늦게
+  // 시간을 넘겨도 새 페이지의 상태를 바꾸지 않게 한다.
+  int _page = 0;
 
   /// 웹에 열린 `<dialog>` 가 있으면 닫고 true. 스크립트가 실패하면 false 로 보고 평소 뒤로 가기를 한다.
   /// 시간이 넘으면(1초) 이 입력은 쓴 것으로 보고 true. 단 10초 안에 또 누르면 스크립트 없이 평소 뒤로 가기(false).
@@ -608,6 +611,7 @@ class _WebScreenState extends State<WebScreen> {
         DateTime.now().difference(timedOutAt) < const Duration(seconds: 10)) {
       return false;
     }
+    final page = _page;
     try {
       // 시간이 넘어도 스크립트는 취소되지 않아 뒤늦게 시트를 닫을 수 있다. 그때 이 입력으로 이전 페이지 이동 · 앱 종료까지
       // 하면 한 번 눌렀는데 두 가지가 일어나므로, 시간 초과면 이 입력을 쓴 것으로 본다(안 닫혔으면 한 번 더 누르면 된다).
@@ -616,7 +620,7 @@ class _WebScreenState extends State<WebScreen> {
           .timeout(
             const Duration(seconds: 1),
             onTimeout: () {
-              _dialogTimedOutAt = DateTime.now();
+              if (page == _page) _dialogTimedOutAt = DateTime.now();
               return true;
             },
           );
@@ -784,6 +788,11 @@ class _WebScreenState extends State<WebScreen> {
                           mode: LaunchMode.externalApplication,
                         );
                         return NavigationActionPolicy.CANCEL;
+                      },
+                      // 페이지가 바뀌면(SPA 이동 포함) 뒤로 가기 시간 초과 우회를 없앤다 — 새 페이지의 시트는 다시 확인한다.
+                      onUpdateVisitedHistory: (_, _, _) {
+                        _page++;
+                        _dialogTimedOutAt = null;
                       },
                       onLoadStop: (controller, _) async {
                         // 앱이 연 이동이 끝났으니 가로채기 예외 표시를 지운다(Android 는 loadUrl 에 shouldOverrideUrlLoading 을 안 부른다).
