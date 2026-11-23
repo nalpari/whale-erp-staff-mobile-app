@@ -19,7 +19,9 @@ abstract final class BridgeError {
 /// 앱은 언제나 `{ok: true, data: ...}` 또는 `{ok: false, error: <BridgeError>}` 하나로 답한다.
 ///
 /// 계획서 조건: 웹 주소([base])와 같은 출처(https · 호스트 · 포트)의 맨 위 화면에서 온 호출만 받는다.
-/// iframe 이나 다른 사이트에서 온 호출은 앱 기능을 부르지 않고 `forbidden` 으로 답한다.
+/// 1차로 웹뷰 설정(`javaScriptBridgeOriginAllowList` · `javaScriptBridgeForMainFrameOnly`)이 브리지를 웹 주소의
+/// 맨 위 화면에만 심어, iframe 에는 `callHandler` 가 없다. 그래도 온 호출은 여기서 다시 검사해, 맞지 않으면
+/// 앱 기능을 부르지 않고 `forbidden` 으로 답한다. 이 검사는 플러그인이 넘기는 출처 · 맨 위 화면 값을 믿는다.
 /// User-Agent(`WhaleStaffApp/`)는 웹이 앱 안인지 알아보는 용도일 뿐, 여기서 권한 확인에 쓰지 않는다.
 class NativeBridge {
   NativeBridge({required this.base, required this.handlers});
@@ -53,20 +55,20 @@ class NativeBridge {
     List<dynamic> args = const [],
   }) async {
     final handler = handlers[name];
-    if (handler == null ||
-        !isMainFrame ||
-        !isTrustedOrigin(origin, base)) {
+    if (handler == null || !isMainFrame || !isTrustedOrigin(origin, base)) {
       return {'ok': false, 'error': BridgeError.forbidden};
     }
     try {
       return {'ok': true, 'data': await handler(args)};
     } catch (e, s) {
-      FlutterError.reportError(FlutterErrorDetails(
-        exception: e,
-        stack: s,
-        library: 'native_bridge',
-        context: ErrorDescription('브리지 기능 $name 실패'),
-      ));
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: e,
+          stack: s,
+          library: 'native_bridge',
+          context: ErrorDescription('브리지 기능 $name 실패'),
+        ),
+      );
       return {'ok': false, 'error': BridgeError.failed};
     }
   }
@@ -90,10 +92,10 @@ BridgeHandler appInfoHandler({
   required TargetPlatform platform,
 }) =>
     (_) => {
-          'version': version,
-          'platform': switch (platform) {
-            TargetPlatform.iOS => 'ios',
-            TargetPlatform.android => 'android',
-            _ => 'other',
-          },
-        };
+      'version': version,
+      'platform': switch (platform) {
+        TargetPlatform.iOS => 'ios',
+        TargetPlatform.android => 'android',
+        _ => 'other',
+      },
+    };

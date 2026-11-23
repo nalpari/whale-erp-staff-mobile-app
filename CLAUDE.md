@@ -47,7 +47,7 @@ If a plan decision changes (tech, icon, name, bundle ID), edit the Obsidian note
 
 ## Architecture
 
-Everything lives in `lib/main.dart`, except the JS bridge in `lib/native_bridge.dart` and location measuring in `lib/location_reading.dart`.
+Everything lives in `lib/main.dart`, except the JS bridge in `lib/native_bridge.dart` and location measuring in `lib/location_reading.dart`. The bridge is injected only into the `WEB_URL` origin's main frame (`javaScriptBridgeOriginAllowList` + `javaScriptBridgeForMainFrameOnly`): on Android the plugin computes the caller's origin and isMainFrame in page JS, so an iframe could spoof them; `NativeBridge.handle` re-checks as a second layer.
 
 - `NativeBridge` (`lib/native_bridge.dart`) registers JS handlers in `onWebViewCreated`. Every call goes through `handle()`, which answers `{ok: false, error: 'forbidden'}` unless the call is from the main frame of an `isTrustedOrigin` page (https, same host and port as `WEB_URL`), and wraps results as `{ok: true, data}` or `{ok: false, error: 'failed'}` (exceptions are reported, never thrown to JS). Unknown handler names never reach Dart; the plugin returns `null`. The contract for the web side is `docs/native-bridge.md`; add new handlers there too. First handler: `appInfo` (`version`, `platform`).
 - `measureLocation` (`lib/location_reading.dart`, bridge handler of the same name) runs the shared `LocationGate` permission check (same guide snackbars as the geolocation prompt), then takes one fresh `Geolocator.getCurrentPosition` (high accuracy, 8 s limit; never last-known) and returns coordinates, accuracy, `isMocked` and whether access is precise from that one reading (plan decision 8). The web waits 75 s for this call because the permission dialog can take up to the gate's 60 s. Mock detection was verified on the emulator with a shell test provider (`appops set com.android.shell android:mock_location allow`, `cmd location providers add-test-provider gps`, `set-test-provider-location`).
@@ -89,4 +89,4 @@ Because the foreground PNG already includes the 108dp safe-zone padding, `adapti
 
 ## Not done yet
 
-Release signing / iOS provisioning, prod URL default, push notifications, camera/file upload permissions, JS bridge. iOS builds and runs on the simulator here (Xcode 27.2, `flutter build ios --simulator`); it has not been run on a real iPhone.
+Release signing / iOS provisioning, prod URL default, push notifications, camera/file upload permissions, file-download bridge handler, the web side of `measureLocation` (web PR #87 then check-in screen). iOS builds and runs on the simulator here (Xcode 27.2, `flutter build ios --simulator`); it has not been run on a real iPhone.

@@ -31,14 +31,14 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 | 모양 | 뜻 |
 | --- | --- |
 | `{ ok: true, data: ... }` | 성공. **`data` 칸은 늘 넣는다.** 돌려줄 값이 없어도 `data: null`로 넣는다 |
-| `{ ok: false, error: "forbidden" }` | 앱이 받지 않는 호출. 웹 주소와 다른 출처(https · 호스트 · 포트), 또는 iframe 안에서 불렀다 |
+| `{ ok: false, error: "forbidden" }` | 앱이 받지 않는 호출. 웹 주소와 다른 출처(https · 호스트 · 포트), 또는 맨 위 화면이 아닌 곳에서 불렀다. 앱은 브리지를 웹 주소의 맨 위 화면에만 심으므로(iframe 에는 `callHandler`가 없어 웹은 `unavailable`을 받는다) 보통은 나오지 않는 2차 방어다 |
 | `{ ok: false, error: "failed" }` | 앱 기능이 실패했다. 자세한 내용은 앱 로그에만 남는다 |
 
 웹은 앱의 답을 아래 네 가지 실패로 나눠 다룬다.
 
 | 웹이 받는 실패 | 언제 |
 | --- | --- |
-| `forbidden` | 앱이 `forbidden`으로 답했다. 웹 코드 버그(iframe에서 부름 등)이거나 다른 사이트가 부른 것이라 다시 시도하지 않는다 |
+| `forbidden` | 앱이 `forbidden`으로 답했다. 웹 코드 버그이거나 다른 사이트가 부른 것이라 다시 시도하지 않는다 |
 | `failed` | 앱이 `failed`로 답했거나, 호출이 예외로 끝났거나, **10초 안에 답이 없었다** |
 | `unavailable` | 앱 밖이거나, 브리지가 없거나, 앱에 없는 기능이다. 앱에 없는 이름으로 부르면 앱까지 오지 않고 `null`이 돌아온다(웹뷰 플러그인 동작) |
 | `malformed` | 앱의 답이 위 표와 다르다(`data` 칸이 없음, 모르는 오류 코드, `data` 모양이 기능 약속과 다름) |
@@ -46,7 +46,8 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 ## 시간 제한 (앱 기능을 만들 때 지킬 것)
 
 - 웹은 호출마다 **10초**까지 기다리고, 넘으면 `failed`로 끝낸다. 앱이 그 뒤에 답해도 버려진다.
-- 그래서 오래 걸릴 수 있는 기능(위치 권한 창, GPS 측정 등)은 **앱 안에서 10초보다 짧게 끝나도록** 시간 제한을 걸고, 넘으면 `failed`나 기능별 결과로 먼저 답한다.
+- 그래서 오래 걸릴 수 있는 기능은 **앱 안에서 10초보다 짧게 끝나도록** 시간 제한을 걸고, 넘으면 `failed`나 기능별 결과로 먼저 답한다.
+- 예외: 사용자가 OS 창을 보고 고르는 동안 기다려야 하는 기능은 기능 목록에 웹이 기다릴 시간을 따로 적고, 앱은 그보다 짧게 끝낸다(`measureLocation`: 웹 75초).
 - 시간 초과는 웹이 기다리기를 그만둔 것일 뿐 앱 기능은 계속 돌 수 있다. 부작용이 있는 기능(파일 저장 등)을 웹이 다시 부르면 두 번 실행될 수 있으니, 그런 기능은 다시 부르기 전에 결과를 따로 확인하게 만든다.
 
 ## 기능 목록
@@ -62,11 +63,12 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 
 | `data.status` | 다른 칸 | 뜻 |
 | --- | --- | --- |
-| `"ok"` | `latitude`, `longitude`(도), `accuracyMeters`(미터), `mocked`(참 · 거짓), `precise`(참 · 거짓) | 위치를 쟀다. `mocked`는 운영체제가 알려 준 모의 위치 여부(Android `isMock` · `isFromMockProvider`, iOS `isSimulatedBySoftware`). `precise`가 거짓이면 Android 「대략적 위치」라 반경 판정이 틀릴 수 있다(판정은 그대로 하고, 앱이 화면 아래에 정확한 위치를 켜라는 안내를 띄운다) |
-| `"denied"` | 없음 | 위치 권한 거부(영구 거부 포함). 영구 거부면 앱이 설정으로 가는 안내를 띄운다 |
-| `"unavailable"` | `reason`: `"serviceDisabled"`(기기 위치 꺼짐) · `"permissionCheckFailed"`(권한 확인 실패) · `"timeout"`(8초 안에 위치를 못 읽음) · `"error"`(그 밖의 측정 오류) | 위치를 읽지 못했다. 기기 위치가 꺼졌으면 앱이 위치 설정으로 가는 안내를 띄운다 |
+| `"ok"` | `latitude`, `longitude`(도), `accuracyMeters`(미터 · 운영체제가 알려 주지 않으면 `null`), `mocked`(참 · 거짓), `precise`(참 · 거짓 · 정확도 설정을 읽지 못하면 `null`) | 위치를 쟀다. `mocked`는 운영체제가 알려 준 모의 위치 여부(Android `isMock` · `isFromMockProvider`, iOS `isSimulatedBySoftware`). `precise`가 거짓이면 「대략적 위치」(Android 대략적 위치 · iOS 정확한 위치 끔)라 반경 판정이 틀릴 수 있다(판정은 그대로 하고, 앱이 화면 아래에 정확한 위치를 켜라는 안내를 띄운다). `null`이면 `accuracyMeters`로 판단한다 |
+| `"denied"` | 없음 | 위치 권한 거부(영구 거부 포함, 측정 중에 권한을 빼앗긴 경우 포함). 영구 거부면 앱이 설정으로 가는 안내를 띄운다. 다시 물을 수 있는 거부와 영구 거부는 아직 나누지 않는다 |
+| `"unavailable"` | `reason`: `"serviceDisabled"`(기기 위치 꺼짐) · `"permissionCheckFailed"`(권한 확인 실패) · `"permissionTimeout"`(권한 확인 전체가 64초를 넘김) · `"timeout"`(8초 안에 위치를 못 읽음) · `"error"`(그 밖의 측정 오류) | 위치를 읽지 못했다. 기기 위치가 꺼졌으면 앱이 위치 설정으로 가는 안내를 띄운다 |
 
-- **시간:** 권한 창이 뜨면 사용자가 고르는 동안 기다린다(앱 안 상한 60초). 권한이 정해진 뒤 측정은 앱 안에서 8초로 끊는다. 그래서 웹은 이 기능만 기본 10초 대신 **`timeoutMs: 75_000`** 처럼 길게 기다린다. 권한이 이미 있으면 보통 몇 초 안에 끝난다.
+- **시간:** 권한 창이 뜨면 사용자가 고르는 동안 기다린다. 권한 확인 전체(정확한 위치 재요청 포함)는 앱 안에서 64초로 끊고(`permissionTimeout`), 권한이 정해진 뒤 측정은 8초로 끊는다(최대 약 9초). 그래서 웹은 이 기능만 기본 10초 대신 **`timeoutMs: 75_000`** 처럼 길게 기다린다. 권한이 이미 있으면 보통 몇 초 안에 끝난다.
+- **알려진 한계:** Android는 고정밀 위치가 꺼진 기기에서 측정 중 「위치 정확도 켜기」 시스템 창을 띄울 수 있다. 사용자가 그 창을 보는 사이 8초가 지나면 `timeout`으로 답한다(다시 누르면 된다). iOS는 시간 초과 뒤에도 네이티브 측정이 위치를 하나 받을 때까지 이어질 수 있다(답만 끊긴다).
 - **부작용 없음:** 다시 불러도 위치를 한 번 더 잴 뿐이다. 위치 수집 · 이용 확인자료는 웹이 지금처럼 서버에 남긴다(앱은 좌표를 저장하거나 서버로 보내지 않는다).
 - **겹친 호출:** 권한 창이 떠 있는 동안 온 호출은 같은 권한 결과를 기다린다.
 

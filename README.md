@@ -13,7 +13,7 @@
 
 ## 주요 동작
 
-코드는 `lib/main.dart`에 있고, 웹과 주고받는 브리지만 `lib/native_bridge.dart`에 따로 있습니다.
+코드는 `lib/main.dart`에 있고, 웹과 주고받는 브리지는 `lib/native_bridge.dart`, 위치 측정은 `lib/location_reading.dart`에 따로 있습니다.
 
 - **웹 주소**: `--dart-define=WEB_URL=...`로 넘깁니다. 넘기지 않으면 dev 주소 `https://staff-dev.whaleerp.co.kr`를 띄웁니다.
 - **링크 처리**: `WEB_URL`과 같은 호스트의 http(s) 주소만 앱 안에서 엽니다. 다른 도메인과 `tel:`, `mailto:` 링크는 외부 앱이나 브라우저로 엽니다.

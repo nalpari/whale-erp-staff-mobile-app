@@ -54,7 +54,9 @@ Future<LocationAccess> ensureLocationAccess({
   bool askPrecise = true,
   VoidCallback? onAskPrecise,
   Duration timeout = const Duration(seconds: 60),
+  bool? onIOS,
 }) async {
+  final isIOS = onIOS ?? defaultTargetPlatform == TargetPlatform.iOS;
   Future<T> guarded<T>(
     Future<T> Function() call,
     T fallback,
@@ -110,6 +112,12 @@ Future<LocationAccess> ensureLocationAccess({
         )
       : current;
   final notGranted = blocked(permission);
+  if (notGranted == LocationAccess.deniedForever &&
+      isIOS &&
+      !await guarded(serviceEnabled, true, '위치 서비스 상태를 읽지 못해 켜진 것으로 봄')) {
+    // iOS 는 기기 위치를 전부 끄면 권한이 denied(→ deniedForever)로 보인다. 그때는 위치를 켜라고 안내한다.
+    return LocationAccess.serviceDisabled;
+  }
   if (notGranted != null) return notGranted;
 
   if (!await guarded(serviceEnabled, true, '위치 서비스 상태를 읽지 못해 켜진 것으로 봄')) {
@@ -389,8 +397,15 @@ class _WebScreenState extends State<WebScreen> {
                     InAppWebView(
                       initialUrlRequest: URLRequest(url: WebUri(webUrl)),
                       initialSettings: InAppWebViewSettings(
-                        applicationNameForUserAgent: appUserAgent(widget.version),
+                        applicationNameForUserAgent: appUserAgent(
+                          widget.version,
+                        ),
                         useShouldOverrideUrlLoading: true,
+                        // Android 는 브리지 호출의 출처 · 맨 위 화면 여부를 페이지 안 JS 가 계산해 넘겨서 iframe 이 위조할 수
+                        // 있다. 브리지 스크립트를 웹 주소의 맨 위 화면에만 심어, iframe 에서는 callHandler 자체가 없게 한다.
+                        // NativeBridge.handle 의 출처 · 맨 위 화면 검사는 2차 방어로 남긴다.
+                        javaScriptBridgeOriginAllowList: {_base.origin},
+                        javaScriptBridgeForMainFrameOnly: true,
                       ),
                       pullToRefreshController: _refresh,
                       onWebViewCreated: (controller) {

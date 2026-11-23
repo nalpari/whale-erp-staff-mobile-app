@@ -396,6 +396,24 @@ void main() {
       expect(access, LocationAccess.approximate);
       expect(tester.takeException(), isA<TimeoutException>());
     });
+    test('iOS 에서 영구 거부로 보이는데 기기 위치가 꺼져 있으면 serviceDisabled', () async {
+      for (final (ios, want) in [
+        (true, LocationAccess.serviceDisabled),
+        (false, LocationAccess.deniedForever),
+      ]) {
+        expect(
+          await ensureLocationAccess(
+            check: counted('check', LocationPermission.deniedForever),
+            request: counted('request', LocationPermission.deniedForever),
+            accuracy: counted('accuracy', precise),
+            serviceEnabled: counted('service', false),
+            onIOS: ios,
+          ),
+          want,
+          reason: 'iOS=$ios',
+        );
+      }
+    });
   });
 
   group('LocationGate', () {
@@ -480,57 +498,85 @@ void main() {
 
   group('NativeBridge', () {
     const origin = 'https://staff-dev.whaleerp.co.kr';
-    final bridge = NativeBridge(
-      base: base,
-      handlers: {
-        'echo': (args) => args,
-        'boom': (_) => throw StateError('x'),
-        'appInfo': appInfoHandler(
-          version: '1.0.0',
-          platform: TargetPlatform.iOS,
-        ),
-      },
-    );
+    // 막힌 호출이 기능을 부르지 않았는지(권한 창 · 측정 같은 부작용이 없는지) 세려고 테스트마다 새로 만든다.
+    late int echoCalls;
+    late NativeBridge bridge;
+    setUp(() {
+      echoCalls = 0;
+      bridge = NativeBridge(
+        base: base,
+        handlers: {
+          'echo': (args) {
+            echoCalls++;
+            return args;
+          },
+          'boom': (_) => throw StateError('x'),
+          'asyncBoom': (_) async => throw StateError('y'),
+          'appInfo': appInfoHandler(
+            version: '1.0.0',
+            platform: TargetPlatform.iOS,
+          ),
+        },
+      );
+    });
 
     test('같은 출처의 맨 위 화면 호출은 기능을 부르고 data 로 답한다', () async {
       expect(
-        await bridge.handle('echo', origin: origin, isMainFrame: true, args: [1, 'a']),
-        {'ok': true, 'data': [1, 'a']},
+        await bridge.handle(
+          'echo',
+          origin: origin,
+          isMainFrame: true,
+          args: [1, 'a'],
+        ),
+        {
+          'ok': true,
+          'data': [1, 'a'],
+        },
       );
+      expect(echoCalls, 1);
     });
 
-    test('iframe 에서 온 호출은 막는다', () async {
-      expect(
-        await bridge.handle('echo', origin: origin, isMainFrame: false),
-        {'ok': false, 'error': BridgeError.forbidden},
-      );
+    test('iframe 에서 온 호출은 기능을 부르지 않고 막는다', () async {
+      expect(await bridge.handle('echo', origin: origin, isMainFrame: false), {
+        'ok': false,
+        'error': BridgeError.forbidden,
+      });
+      expect(echoCalls, 0);
     });
 
-    test('다른 출처 · 다른 포트 · http 에서 온 호출은 막는다', () async {
+    test('다른 출처 · 다른 포트 · http 에서 온 호출은 기능을 부르지 않고 막는다', () async {
       for (final other in [
         'https://evil.example.com',
         'https://staff-dev.whaleerp.co.kr:8443',
         'http://staff-dev.whaleerp.co.kr',
         'null',
       ]) {
-        expect(
-          await bridge.handle('echo', origin: other, isMainFrame: true),
-          {'ok': false, 'error': BridgeError.forbidden},
-          reason: other,
-        );
+        expect(await bridge.handle('echo', origin: other, isMainFrame: true), {
+          'ok': false,
+          'error': BridgeError.forbidden,
+        }, reason: other);
       }
+      expect(echoCalls, 0);
     });
 
-    test('없는 기능 이름은 막는다', () async {
-      expect(
-        await bridge.handle('nope', origin: origin, isMainFrame: true),
-        {'ok': false, 'error': BridgeError.forbidden},
-      );
+    test('등록되지 않은 이름은 막는다(실제로는 웹뷰 플러그인이 앱까지 보내지 않고 null 을 준다)', () async {
+      expect(await bridge.handle('nope', origin: origin, isMainFrame: true), {
+        'ok': false,
+        'error': BridgeError.forbidden,
+      });
     });
 
     testWidgets('기능이 예외를 던지면 failed 로 답하고 앱은 계속 돈다', (tester) async {
+      expect(await bridge.handle('boom', origin: origin, isMainFrame: true), {
+        'ok': false,
+        'error': BridgeError.failed,
+      });
+      expect(tester.takeException(), isA<StateError>());
+    });
+
+    testWidgets('비동기로 실패해도 failed 로 답한다', (tester) async {
       expect(
-        await bridge.handle('boom', origin: origin, isMainFrame: true),
+        await bridge.handle('asyncBoom', origin: origin, isMainFrame: true),
         {'ok': false, 'error': BridgeError.failed},
       );
       expect(tester.takeException(), isA<StateError>());
@@ -544,38 +590,51 @@ void main() {
           'data': {'version': '1.0.0', 'platform': 'ios'},
         },
       );
+      for (final (platform, name) in [
+        (TargetPlatform.android, 'android'),
+        (TargetPlatform.linux, 'other'),
+      ]) {
+        expect(appInfoHandler(version: '1', platform: platform)(const []), {
+          'version': '1',
+          'platform': name,
+        });
+      }
     });
   });
 
   group('measureLocation', () {
     Position position({bool mocked = false}) => Position(
-          latitude: 37.5,
-          longitude: 127.0,
-          timestamp: DateTime(2026, 11, 23),
-          accuracy: 12,
-          altitude: 0,
-          altitudeAccuracy: 0,
-          heading: 0,
-          headingAccuracy: 0,
-          speed: 0,
-          speedAccuracy: 0,
-          isMocked: mocked,
-        );
+      latitude: 37.5,
+      longitude: 127.0,
+      timestamp: DateTime(2026, 11, 23),
+      accuracy: 12,
+      altitude: 0,
+      altitudeAccuracy: 0,
+      heading: 0,
+      headingAccuracy: 0,
+      speed: 0,
+      speedAccuracy: 0,
+      isMocked: mocked,
+    );
 
     Future<Map<String, Object?>> measure(
       LocationAccess access, {
       Future<Position> Function()? read,
-    }) =>
-        measureLocation(
-          ensureAccess: () async => access,
-          currentPosition: read ?? () async => position(),
-        );
+      LocationAccuracyStatus accuracy = LocationAccuracyStatus.precise,
+      LocationPermission permission = LocationPermission.whileInUse,
+    }) => measureLocation(
+      ensureAccess: () async => access,
+      currentPosition: read ?? () async => position(),
+      accuracy: () async => accuracy,
+      checkPermission: () async => permission,
+    );
 
     test('정확한 위치면 좌표와 모의 여부를 같은 측정값에서 돌려준다', () async {
       expect(
         await measureLocation(
           ensureAccess: () async => LocationAccess.precise,
           currentPosition: () async => position(mocked: true),
+          accuracy: () async => LocationAccuracyStatus.precise,
         ),
         {
           'status': 'ok',
@@ -589,7 +648,10 @@ void main() {
     });
 
     test('대략적 위치도 재되 precise 를 false 로 알린다', () async {
-      final result = await measure(LocationAccess.approximate);
+      final result = await measure(
+        LocationAccess.approximate,
+        accuracy: LocationAccuracyStatus.reduced,
+      );
       expect(result['status'], 'ok');
       expect(result['precise'], false);
       expect(result['mocked'], false);
@@ -597,12 +659,18 @@ void main() {
 
     test('권한이 없으면 재지 않고 denied', () async {
       var read = false;
-      for (final access in [LocationAccess.denied, LocationAccess.deniedForever]) {
+      for (final access in [
+        LocationAccess.denied,
+        LocationAccess.deniedForever,
+      ]) {
         expect(
-          await measure(access, read: () async {
-            read = true;
-            return position();
-          }),
+          await measure(
+            access,
+            read: () async {
+              read = true;
+              return position();
+            },
+          ),
           {'status': 'denied'},
         );
       }
@@ -610,37 +678,141 @@ void main() {
     });
 
     test('기기 위치 꺼짐 · 권한 확인 실패는 unavailable 과 이유', () async {
-      expect(await measure(LocationAccess.serviceDisabled),
-          {'status': 'unavailable', 'reason': 'serviceDisabled'});
-      expect(await measure(LocationAccess.failed),
-          {'status': 'unavailable', 'reason': 'permissionCheckFailed'});
+      expect(await measure(LocationAccess.serviceDisabled), {
+        'status': 'unavailable',
+        'reason': 'serviceDisabled',
+      });
+      expect(await measure(LocationAccess.failed), {
+        'status': 'unavailable',
+        'reason': 'permissionCheckFailed',
+      });
     });
 
     test('측정이 시간을 넘거나 위치가 꺼지면 unavailable, 측정 중 권한이 막히면 denied', () async {
       expect(
-        await measure(LocationAccess.precise,
-            read: () async => throw TimeoutException('x')),
+        await measure(
+          LocationAccess.precise,
+          read: () async => throw TimeoutException('x'),
+        ),
         {'status': 'unavailable', 'reason': 'timeout'},
       );
       expect(
-        await measure(LocationAccess.precise,
-            read: () async => throw const LocationServiceDisabledException()),
+        await measure(
+          LocationAccess.precise,
+          read: () async => throw const LocationServiceDisabledException(),
+        ),
         {'status': 'unavailable', 'reason': 'serviceDisabled'},
       );
       expect(
-        await measure(LocationAccess.precise,
-            read: () async => throw const PermissionDeniedException('x')),
+        await measure(
+          LocationAccess.precise,
+          read: () async => throw const PermissionDeniedException('x'),
+        ),
         {'status': 'denied'},
       );
     });
 
     testWidgets('그 밖의 측정 오류는 보고하고 unavailable(error)', (tester) async {
       expect(
-        await measure(LocationAccess.precise,
-            read: () async => throw StateError('x')),
+        await measure(
+          LocationAccess.precise,
+          read: () async => throw StateError('x'),
+        ),
         {'status': 'unavailable', 'reason': 'error'},
       );
       expect(tester.takeException(), isA<StateError>());
+    });
+    testWidgets('정확도 설정을 읽지 못하면 precise 는 null(권한 확인의 대체값을 믿지 않는다)', (
+      tester,
+    ) async {
+      final result = await measureLocation(
+        ensureAccess: () async => LocationAccess.precise,
+        currentPosition: () async => position(),
+        accuracy: () async => throw StateError('정확도'),
+      );
+      expect(result['status'], 'ok');
+      expect(result['precise'], isNull);
+      expect(tester.takeException(), isA<StateError>());
+    });
+
+    test('정확도 값이 없으면(0) accuracyMeters 는 null', () async {
+      final result = await measure(
+        LocationAccess.precise,
+        read: () async => Position(
+          latitude: 1,
+          longitude: 2,
+          timestamp: DateTime(2026, 11, 23),
+          accuracy: 0,
+          altitude: 0,
+          altitudeAccuracy: 0,
+          heading: 0,
+          headingAccuracy: 0,
+          speed: 0,
+          speedAccuracy: 0,
+        ),
+      );
+      expect(result['accuracyMeters'], isNull);
+    });
+
+    testWidgets('측정이 끝나지 않으면 9초 뒤 timeout 으로 끊는다', (tester) async {
+      Map<String, Object?>? result;
+      measure(
+        LocationAccess.precise,
+        read: () => Completer<Position>().future,
+      ).then((v) => result = v);
+      await tester.pump(measureTimeLimit);
+      expect(result, isNull);
+      await tester.pump(const Duration(seconds: 1));
+      expect(result, {'status': 'unavailable', 'reason': 'timeout'});
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('권한 확인이 상한을 넘기면 재지 않고 permissionTimeout', (tester) async {
+      var read = false;
+      Map<String, Object?>? result;
+      measureLocation(
+        ensureAccess: () => Completer<LocationAccess>().future,
+        currentPosition: () async {
+          read = true;
+          return position();
+        },
+      ).then((v) => result = v);
+      await tester.pump(permissionTimeLimit);
+      expect(result, {'status': 'unavailable', 'reason': 'permissionTimeout'});
+      expect(read, isFalse);
+    });
+
+    testWidgets('권한 확인이 예외로 끝나면 보고하고 permissionCheckFailed', (tester) async {
+      expect(
+        await measureLocation(
+          ensureAccess: () async => throw StateError('안내 실패'),
+          currentPosition: () async => position(),
+        ),
+        {'status': 'unavailable', 'reason': 'permissionCheckFailed'},
+      );
+      expect(tester.takeException(), isA<StateError>());
+    });
+
+    testWidgets('측정 중 일반 오류인데 권한이 사라졌으면 denied(iOS 권한 박탈)', (tester) async {
+      expect(
+        await measure(
+          LocationAccess.precise,
+          read: () async => throw const PositionUpdateException('denied'),
+          permission: LocationPermission.deniedForever,
+        ),
+        {'status': 'denied'},
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('예상한 실패(꺼짐 · 거부 · 시간 초과)는 오류로 보고하지 않는다', (tester) async {
+      await measure(LocationAccess.serviceDisabled);
+      await measure(LocationAccess.denied);
+      await measure(
+        LocationAccess.precise,
+        read: () async => throw TimeoutException('x'),
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 }
