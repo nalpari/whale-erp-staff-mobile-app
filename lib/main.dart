@@ -615,15 +615,22 @@ class _WebScreenState extends State<WebScreen> {
     try {
       // 시간이 넘어도 스크립트는 취소되지 않아 뒤늦게 시트를 닫을 수 있다. 그때 이 입력으로 이전 페이지 이동 · 앱 종료까지
       // 하면 한 번 눌렀는데 두 가지가 일어나므로, 시간 초과면 이 입력을 쓴 것으로 본다(안 닫혔으면 한 번 더 누르면 된다).
-      final closed = await controller
-          .evaluateJavascript(source: closeTopDialogScript)
-          .timeout(
-            const Duration(seconds: 1),
-            onTimeout: () {
-              if (page == _page) _dialogTimedOutAt = DateTime.now();
-              return true;
-            },
-          );
+      final script = controller.evaluateJavascript(
+        source: closeTopDialogScript,
+      );
+      // 늦게라도 웹뷰가 답하면 멈춘 게 아니므로 우회를 풀어, 다음 뒤로 가기가 남은 시트를 다시 확인하게 한다.
+      unawaited(
+        script.then<void>((_) {
+          if (page == _page) _dialogTimedOutAt = null;
+        }, onError: (_) {}),
+      );
+      final closed = await script.timeout(
+        const Duration(seconds: 1),
+        onTimeout: () {
+          if (page == _page) _dialogTimedOutAt = DateTime.now();
+          return true;
+        },
+      );
       return closed == true;
     } catch (e, s) {
       FlutterError.reportError(
@@ -640,7 +647,10 @@ class _WebScreenState extends State<WebScreen> {
 
   Future<void> _back() async {
     final controller = _controller;
+    final page = _page;
     if (controller != null && await _closeWebDialog(controller)) return;
+    // 시트를 확인하는 사이 페이지가 바뀌었으면(SPA 이동) 이 입력으로 새 페이지 기록을 움직이지 않는다.
+    if (page != _page) return;
     if (controller != null && await controller.canGoBack()) {
       await controller.goBack();
     } else {
