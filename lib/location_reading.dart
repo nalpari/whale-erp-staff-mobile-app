@@ -169,14 +169,42 @@ const freshnessTolerance = Duration(seconds: 2);
 /// [positions] 에서 [startedAt] 뒤에 잰(허용 오차 [tolerance] 안) 첫 위치를 고른다. 운영체제가 첫 결과로
 /// 직전에 캐시해 둔 옛 위치를 줄 수 있어(근무지에 막 도착했는데 이동 전 좌표), 그런 위치는 건너뛰고 다음 위치를 기다린다.
 /// [timeLimit] 안에 새 위치가 없으면 TimeoutException.
+/// 성공 · 오류 · 시간 초과 어느 쪽이든 스트림 구독을 끊는다. 끊지 않으면 웹에 답한 뒤에도 고정밀 측정이 계속 돈다
+/// (`Future.timeout` 은 원래 작업을 멈추지 않는다).
 Future<Position> firstFreshPosition(
   Stream<Position> positions,
   DateTime startedAt, {
   Duration tolerance = freshnessTolerance,
   Duration timeLimit = measureTimeLimit,
-}) => positions
-    .firstWhere((p) => !p.timestamp.isBefore(startedAt.subtract(tolerance)))
-    .timeout(timeLimit);
+}) {
+  final oldest = startedAt.subtract(tolerance);
+  final result = Completer<Position>();
+  late final StreamSubscription<Position> subscription;
+  late final Timer timer;
+  void finish(void Function() complete) {
+    if (result.isCompleted) return;
+    timer.cancel();
+    unawaited(subscription.cancel());
+    complete();
+  }
+
+  timer = Timer(
+    timeLimit,
+    () => finish(
+      () => result.completeError(TimeoutException('새 위치를 받지 못함', timeLimit)),
+    ),
+  );
+  subscription = positions.listen(
+    (p) {
+      if (!p.timestamp.isBefore(oldest)) finish(() => result.complete(p));
+    },
+    onError: (Object e, StackTrace s) =>
+        finish(() => result.completeError(e, s)),
+    onDone: () =>
+        finish(() => result.completeError(StateError('위치 스트림이 새 위치 없이 끝남'))),
+  );
+  return result.future;
+}
 
 /// 지금 위치를 높은 정확도로 새로 읽는다. 측정을 시작하기 전에 잰 위치는 쓰지 않는다([firstFreshPosition]).
 /// [measureTimeLimit] 안에 새 위치를 못 읽으면 TimeoutException.

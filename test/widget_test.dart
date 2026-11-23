@@ -950,8 +950,11 @@ void main() {
       );
     });
 
-    test('새 위치가 시간 안에 안 오면 TimeoutException', () async {
-      final controller = StreamController<Position>();
+    test('새 위치가 시간 안에 안 오면 TimeoutException 이고 구독을 끊는다', () async {
+      var cancelled = false;
+      final controller = StreamController<Position>(
+        onCancel: () => cancelled = true,
+      );
       addTearDown(controller.close);
       controller.add(at(start.subtract(const Duration(minutes: 3))));
       await expectLater(
@@ -962,6 +965,25 @@ void main() {
         ),
         throwsA(isA<TimeoutException>()),
       );
+      expect(cancelled, isTrue);
+    });
+
+    test('새 위치를 받거나 오류가 나도 구독을 끊는다', () async {
+      var cancels = 0;
+      final ok = StreamController<Position>(onCancel: () => cancels++);
+      final failing = StreamController<Position>(onCancel: () => cancels++);
+      addTearDown(ok.close);
+      addTearDown(failing.close);
+      final got = firstFreshPosition(ok.stream, start);
+      ok.add(at(start));
+      expect((await got).timestamp, start);
+      final error = firstFreshPosition(failing.stream, start);
+      failing.addError(const LocationServiceDisabledException());
+      await expectLater(
+        error,
+        throwsA(isA<LocationServiceDisabledException>()),
+      );
+      expect(cancels, 2);
     });
   });
 }
