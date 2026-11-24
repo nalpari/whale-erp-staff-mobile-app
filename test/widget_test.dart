@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -65,13 +66,14 @@ void main() {
   });
 
   group('flushCookies', () {
-    test('Android 는 쿠키를 디스크에 쓴다', () async {
+    testWidgets('Android 는 쿠키를 디스크에 쓰고 보고하지 않는다', (tester) async {
       var flushed = 0;
       await flushCookies(
         platform: TargetPlatform.android,
         flush: () async => flushed++,
       );
       expect(flushed, 1);
+      expect(tester.takeException(), isNull);
     });
 
     test('iOS 는 웹뷰가 스스로 저장하므로 부르지 않는다', () async {
@@ -83,14 +85,16 @@ void main() {
       expect(flushed, 0);
     });
 
-    test('실패해도 예외를 밖으로 내지 않는다', () async {
+    testWidgets('실패하면 예외를 밖으로 내지 않고 보고한다', (tester) async {
       await flushCookies(
         platform: TargetPlatform.android,
-        flush: () async => throw Exception('채널 오류'),
+        flush: () async => throw PlatformException(code: '채널 오류'),
       );
+      expect(tester.takeException(), isA<PlatformException>());
     });
 
-    testWidgets('응답이 없으면 2초 뒤 끝내고 오류를 보고한다', (tester) async {
+    // 실제 Android 플러그인(1.2.0-beta.3)은 flush 에 답하지 않는다. 그래서 이것이 평소 경로다.
+    testWidgets('응답이 없으면 2초 뒤 끝내고 보고하지 않는다', (tester) async {
       var done = false;
       flushCookies(
         platform: TargetPlatform.android,
@@ -100,7 +104,7 @@ void main() {
       expect(done, isFalse);
       await tester.pump(const Duration(milliseconds: 1));
       expect(done, isTrue);
-      expect(tester.takeException(), isA<TimeoutException>());
+      expect(tester.takeException(), isNull);
     });
   });
 
