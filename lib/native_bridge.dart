@@ -116,7 +116,7 @@ BridgeHandler pullToRefreshHandler(
 /// 페이지가 열릴 때 심는 스크립트. 서명 패드처럼 `touch-action: none` 인 곳이 있으면 앱의 당겨서 새로고침을 끈다.
 /// Android 는 웹뷰 맨 위에서 아래로 끌면 앱(SwipeRefreshLayout)이 먼저 가로채 페이지를 새로 고치므로, 위에서 아래로 긋는
 /// 서명이 새로고침으로 날아갈 수 있다. 웹은 고치지 않는다.
-/// - 서명 패드(`touch-none` · 인라인 `touch-action: none`)가 문서에 나타나면 그동안 미리 끈다(present). 누르는 순간에
+/// - 서명 패드(`touch-none` · 인라인 `touch-action: none`)가 화면에 보이면 그동안 미리 끈다(present, 숨겨진 패드는 세지 않음). 누르는 순간에
 ///   끄면 비동기 브리지가 늦어 맨 위에서 빠르게 그은 첫 획을 새로고침이 먼저 가로챌 수 있다(PR #9 pr-agent 리뷰).
 /// - 누른 곳과 그 부모 가운데 계산된 `touch-action` 이 `none` 인 것이 있으면 손을 뗄 때까지 끈다(off, 클래스를 못 찾는 경우 대비).
 /// - 둘 다 아니면 켠다. 브리지가 아직 없으면 준비 이벤트 때 다시 맞춘다.
@@ -138,7 +138,8 @@ const pullToRefreshGuardScript = '''
   };
   const PAD = '.touch-none,[style*="touch-action: none"],[style*="touch-action:none"]';
   const scan = () => {
-    const next = !!document.querySelector(PAD);
+    // 숨겨진 패드(display: none, 닫힌 dialog 안 등)는 빼고 화면에 보이는 패드만 센다 — 숨긴 채 두면 새로고침이 다시 켜지지 않는다.
+    const next = Array.from(document.querySelectorAll(PAD)).some((el) => el.getClientRects().length > 0);
     if (next !== present) {
       present = next;
       sync(false);
@@ -151,7 +152,7 @@ const pullToRefreshGuardScript = '''
     requestAnimationFrame(() => { queued = false; scan(); });
   };
   new MutationObserver(queueScan).observe(document, {
-    childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'],
+    childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'open', 'hidden'],
   });
   document.addEventListener('DOMContentLoaded', scan);
   window.addEventListener('flutterInAppWebViewPlatformReady', () => sync(true));
