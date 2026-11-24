@@ -65,6 +65,38 @@ void main() {
     });
   });
 
+  group('deviceIdHandler', () {
+    final hex = 'a' * 64;
+    test('64자 16진수 해시를 deviceId 로 돌려준다', () async {
+      expect(await deviceIdHandler(() async => hex)([]), {'deviceId': hex});
+    });
+
+    test('못 읽었거나 해시 모양이 아니면 실패한다(원래 값이 새지 않게)', () async {
+      await expectLater(
+        deviceIdHandler(() async => null)([]),
+        throwsStateError,
+      );
+      await expectLater(
+        deviceIdHandler(() async => '9774d56d682e549c')([]),
+        throwsStateError,
+      );
+      await expectLater(
+        deviceIdHandler(() async => 'A' * 64)([]),
+        throwsStateError,
+      );
+    });
+
+    testWidgets('2초 안에 답이 없으면 실패한다', (tester) async {
+      Object? error;
+      Future(() => deviceIdHandler(() => Completer<String?>().future)([]))
+          .then((f) => f)
+          .catchError((Object e) => error = e);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(error, isA<TimeoutException>());
+    });
+  });
+
   group('pullToRefreshHandler', () {
     test('참 · 거짓 인자로 당겨서 새로고침을 켜고 끈다', () async {
       final calls = <bool>[];

@@ -366,6 +366,11 @@ class _WebScreenState extends State<WebScreen> {
         currentPosition: readCurrentPosition,
         approximatePosition: readAnyPosition,
       ),
+      'deviceId': deviceIdHandler(
+        () =>
+            const MethodChannel('kr.co.whaleerp.staff/device')
+                .invokeMethod<String>('deviceId'),
+      ),
       // 서명 패드를 누르는 동안 당겨서 새로고침을 끈다(pullToRefreshGuardScript 가 부름).
       'pullToRefresh': pullToRefreshHandler(_refresh.setEnabled),
     },

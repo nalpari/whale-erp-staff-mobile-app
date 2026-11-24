@@ -150,3 +150,16 @@ const pullToRefreshGuardScript = '''
   document.addEventListener('touchcancel', release, { capture: true, passive: true });
 })();
 ''';
+
+/// 기기 식별자 형식 — 앱(MainActivity · AppDelegate)이 기기 고유값에 앞말을 붙여 SHA-256 으로 바꾼 64자 소문자 16진수.
+final _deviceIdPattern = RegExp(r'^[0-9a-f]{64}$');
+
+/// 브리지 기능 `deviceId` (계획 결정 9). 웹 로그인이 쿠키 UUID 대신 쓰는 기기 식별자. 기기 고유값(Android ANDROID_ID ·
+/// iOS identifierForVendor)은 앱 밖으로 내보내지 않고 해시만 넘긴다. 2초 안에 못 읽거나 형식이 다르면 `failed`.
+BridgeHandler deviceIdHandler(Future<String?> Function() read) => (_) async {
+  final id = await read().timeout(const Duration(seconds: 2));
+  if (id == null || !_deviceIdPattern.hasMatch(id)) {
+    throw StateError('기기 식별자를 읽지 못함');
+  }
+  return {'deviceId': id};
+};
