@@ -113,21 +113,48 @@ BridgeHandler pullToRefreshHandler(
   return null;
 };
 
-/// 페이지가 열릴 때 심는 스크립트. 서명 패드처럼 `touch-action: none` 인 곳을 누르는 동안 앱의 당겨서 새로고침을 끈다.
+/// 페이지가 열릴 때 심는 스크립트. 서명 패드처럼 `touch-action: none` 인 곳이 있으면 앱의 당겨서 새로고침을 끈다.
 /// Android 는 웹뷰 맨 위에서 아래로 끌면 앱(SwipeRefreshLayout)이 먼저 가로채 페이지를 새로 고치므로, 위에서 아래로 긋는
-/// 서명이 새로고침으로 날아갈 수 있다. 웹은 고치지 않는다 — 누른 곳과 그 부모 가운데 계산된 `touch-action` 이 `none` 인
-/// 것이 있으면 끄고, 손을 떼면(touchend · touchcancel) 다시 켠다. 브리지가 아직 없으면 아무것도 하지 않는다.
+/// 서명이 새로고침으로 날아갈 수 있다. 웹은 고치지 않는다.
+/// - 서명 패드(`touch-none` · 인라인 `touch-action: none`)가 문서에 나타나면 그동안 미리 끈다(present). 누르는 순간에
+///   끄면 비동기 브리지가 늦어 맨 위에서 빠르게 그은 첫 획을 새로고침이 먼저 가로챌 수 있다(PR #9 pr-agent 리뷰).
+/// - 누른 곳과 그 부모 가운데 계산된 `touch-action` 이 `none` 인 것이 있으면 손을 뗄 때까지 끈다(off, 클래스를 못 찾는 경우 대비).
+/// - 둘 다 아니면 켠다. 브리지가 아직 없으면 준비 이벤트 때 다시 맞춘다.
 const pullToRefreshGuardScript = '''
 (() => {
   if (window.__whalePullGuard) return;
   window.__whalePullGuard = true;
   let off = false;
-  const call = (enabled) => {
+  let present = false;
+  let sent = null;
+  const sync = (force) => {
+    const enabled = !(off || present);
+    if (!force && enabled === sent) return;
     const bridge = window.flutter_inappwebview;
     if (bridge && typeof bridge.callHandler === 'function') {
+      sent = enabled;
       bridge.callHandler('pullToRefresh', enabled).catch(() => {});
     }
   };
+  const PAD = '.touch-none,[style*="touch-action: none"],[style*="touch-action:none"]';
+  const scan = () => {
+    const next = !!document.querySelector(PAD);
+    if (next !== present) {
+      present = next;
+      sync(false);
+    }
+  };
+  let queued = false;
+  const queueScan = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; scan(); });
+  };
+  new MutationObserver(queueScan).observe(document, {
+    childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'],
+  });
+  document.addEventListener('DOMContentLoaded', scan);
+  window.addEventListener('flutterInAppWebViewPlatformReady', () => sync(true));
   const blocksPull = (node) => {
     for (let el = node instanceof Element ? node : node && node.parentElement; el; el = el.parentElement) {
       if (getComputedStyle(el).touchAction === 'none') return true;
@@ -137,13 +164,13 @@ const pullToRefreshGuardScript = '''
   document.addEventListener('touchstart', (event) => {
     if (!off && blocksPull(event.target)) {
       off = true;
-      call(false);
+      sync(false);
     }
   }, { capture: true, passive: true });
   const release = (event) => {
     if (off && event.touches.length === 0) {
       off = false;
-      call(true);
+      sync(false);
     }
   };
   document.addEventListener('touchend', release, { capture: true, passive: true });
