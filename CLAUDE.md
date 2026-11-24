@@ -14,7 +14,7 @@ flutter analyze
 flutter test                                              # all tests
 flutter test test/widget_test.dart --plain-name '다른 호스트'   # single test by name substring
 flutter run --dart-define=WEB_URL=https://staff-dev.whaleerp.co.kr
-flutter build apk --release --dart-define=WEB_URL=...     # release is signed with debug keys for now
+flutter build apk --release --dart-define=WEB_URL=...     # signed with android/key.properties if present (see key.properties.example, never committed), else debug keys
 flutter build ios --simulator                              # needs full Xcode + CocoaPods
 BYPASS_PERMISSION_LOCATION_ALWAYS=1 flutter build ipa ...  # App Store builds: strips geolocator's Always-permission code (SPM reads this env var); without it upload may warn ITMS-90683 (missing NSLocationAlwaysAndWhenInUseUsageDescription)
 dart run flutter_native_splash:create                      # after changing the flutter_native_splash block
