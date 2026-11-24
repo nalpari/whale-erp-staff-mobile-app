@@ -368,8 +368,9 @@ class _WebScreenState extends State<WebScreen> {
       ),
     },
   );
-  // 앱이 화면에서 사라질 때(홈으로 · 다른 앱으로 · 최근 앱 화면으로) 쿠키를 디스크에 쓴다. 최근 앱에서 밀어 끄는 동작에는
-  // 따로 콜백이 없고, 그 전에 최근 앱 화면으로 갈 때 쓴 것에 기댄다(에뮬레이터에서 확인한 것은 홈 경로).
+  // 앱이 화면에서 사라질 때(홈으로 · 다른 앱으로) 쿠키를 디스크에 쓴다. 최근 앱 화면으로 갈 때도 보통 불리지만, 런처가
+  // 앱을 살려 두면 inactive 에서 멈출 수 있어 확인하지 않았다. 최근 앱에서 밀어 끄는 동작에는 따로 콜백이 없고 그 전에
+  // 쓴 것에 기댄다. 에뮬레이터에서 확인한 것은 홈 경로뿐이다.
   late final AppLifecycleListener _lifecycle;
   late final _refresh = PullToRefreshController(
     settings: PullToRefreshSettings(color: primary),
