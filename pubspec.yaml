@@ -36,7 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   # ponytail: 6.1.5 안정판의 Android 구현은 AGP 9 에서 막힌 proguard-android.txt 를 써서 빌드가 깨진다.
   # 고친 베타에 고정한다. 6.2.0 안정판이 나오면 ^6.2.0 으로 바꾼다.
-  # 올릴 때 lib/main.dart flushCookies 의 시간 초과 분기도 다시 본다(Android 플러그인 flush 가 답하는지).
+  # 쿠키 flush 는 플러그인 대신 MainActivity 의 앱 채널로 부른다(플러그인 flush 가 답하지 않아서). 올릴 때 플러그인이 답하면 되돌려도 된다.
   flutter_inappwebview: 6.2.0-beta.3
   url_launcher: ^6.3.3
   package_info_plus: ^10.2.2

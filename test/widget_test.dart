@@ -93,8 +93,7 @@ void main() {
       expect(tester.takeException(), isA<PlatformException>());
     });
 
-    // 실제 Android 플러그인(1.2.0-beta.3)은 flush 에 답하지 않는다. 그래서 이것이 평소 경로다.
-    testWidgets('응답이 없으면 2초 뒤 끝내고 보고하지 않는다', (tester) async {
+    testWidgets('응답이 없으면 2초 뒤 끝내고 시간 초과를 보고한다', (tester) async {
       var done = false;
       flushCookies(
         platform: TargetPlatform.android,
@@ -104,7 +103,7 @@ void main() {
       expect(done, isFalse);
       await tester.pump(const Duration(milliseconds: 1));
       expect(done, isTrue);
-      expect(tester.takeException(), isNull);
+      expect(tester.takeException(), isA<TimeoutException>());
     });
   });
 

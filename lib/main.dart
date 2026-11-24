@@ -284,8 +284,9 @@ String appUserAgent(String version) => 'WhaleStaffApp/$version';
 /// 로그인 쿠키를 디스크에 쓴다(Android `CookieManager.flush`). 앱이 화면에서 사라질 때 부른다.
 /// Android 웹뷰는 쿠키를 메모리에 두었다가 가끔 디스크에 쓰므로, 로그인 직후 앱을 내리고 강제 종료하면 자동 로그인
 /// 쿠키가 사라질 수 있다. iOS(WKWebView)는 쿠키를 스스로 저장하고 플러그인에도 flush 가 없어 부르지 않는다.
-/// 2초까지만 기다린다. Android 플러그인은 flush 에 답하지 않으므로 시간 초과는 정상으로 보고, 그 밖의 오류만
-/// 보고한다(앱이 내려가는 중이라 사용자에게 알릴 일이 아니다).
+/// Android 는 앱 쪽 채널(`cookieChannel`, MainActivity)로 부른다. 플러그인의 flush 는 성공해도 답을 돌려주지 않아
+/// 앱을 내릴 때마다 답을 기다리는 콜백이 남았기 때문이다. 2초까지만 기다리고, 실패 · 시간 초과는 보고만 한다
+/// (앱이 내려가는 중이라 사용자에게 알릴 일이 아니다).
 Future<void> flushCookies({
   required TargetPlatform platform,
   required Future<void> Function() flush,
@@ -293,10 +294,6 @@ Future<void> flushCookies({
   if (platform != TargetPlatform.android) return;
   try {
     await flush().timeout(const Duration(seconds: 2));
-  } on TimeoutException {
-    // flutter_inappwebview_android 1.2.0-beta.3 의 MyCookieManager.flush 는 디스크에 쓰고 나서 답을 돌려주지 않아
-    // 이 호출은 정상일 때도 끝나지 않는다. 네이티브 flush 는 호출을 받자마자 실행되므로 시간 초과는 실패가 아니다.
-    // 플러그인을 올릴 때(6.2.0 정식 등) 답을 돌려주는지 다시 보고, 돌려주면 이 분기를 지운다.
   } catch (e, s) {
     FlutterError.reportError(
       FlutterErrorDetails(
@@ -308,6 +305,9 @@ Future<void> flushCookies({
     );
   }
 }
+
+/// 웹뷰 쿠키를 디스크에 쓰는 앱 쪽 채널(Android MainActivity). 쓰고 나서 바로 답한다.
+const cookieChannel = MethodChannel('kr.co.whaleerp.staff/cookies');
 
 /// 앱 버전을 읽는다. 실패하거나, 2초 안에 끝나지 않거나, 비어 있으면 `unknown`.
 /// main() 은 첫 프레임을 미룬 채 이 값을 기다리므로, 여기서 예외가 새거나 멈추면 앱이 OS 스플래시에서 멈춘다.
@@ -440,11 +440,15 @@ class _WebScreenState extends State<WebScreen> {
   @override
   void initState() {
     super.initState();
+    void persistCookies() => flushCookies(
+      platform: defaultTargetPlatform,
+      flush: () => cookieChannel.invokeMethod<void>('flush'),
+    );
+    // 최근 앱 화면에서는 inactive 에 머물고 hide 까지 가지 않는 런처가 있어, 거기서 바로 밀어 끄면 저장이 빠진다.
+    // inactive 에서도 쓰고, 그 뒤 바뀐 쿠키를 위해 hide 에서도 한 번 더 쓴다(여러 번 불려도 된다).
     _lifecycle = AppLifecycleListener(
-      onHide: () => flushCookies(
-        platform: defaultTargetPlatform,
-        flush: () => CookieManager.instance().flush(),
-      ),
+      onInactive: persistCookies,
+      onHide: persistCookies,
     );
   }
 
