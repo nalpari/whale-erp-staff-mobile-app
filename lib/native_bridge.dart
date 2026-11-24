@@ -99,3 +99,116 @@ BridgeHandler appInfoHandler({
         _ => 'other',
       },
     };
+
+/// 앱 안쪽 기능 `pullToRefresh`. 웹 화면이 부르는 것이 아니라 앱이 심은 [pullToRefreshGuardScript] 가 부른다.
+/// 인자 하나(참 · 거짓)로 당겨서 새로고침을 켜고 끈다. 인자가 참 · 거짓이 아니면 `failed`.
+BridgeHandler pullToRefreshHandler(
+  FutureOr<void> Function(bool enabled) setEnabled,
+) => (args) async {
+  final enabled = args.isEmpty ? null : args.first;
+  if (enabled is! bool) {
+    throw ArgumentError('pullToRefresh 인자는 참 · 거짓 하나: $args');
+  }
+  await setEnabled(enabled);
+  return null;
+};
+
+/// 페이지가 열릴 때 심는 스크립트. 서명 패드처럼 `touch-action: none` 인 곳이 있으면 앱의 당겨서 새로고침을 끈다.
+/// Android 는 웹뷰 맨 위에서 아래로 끌면 앱(SwipeRefreshLayout)이 먼저 가로채 페이지를 새로 고치므로, 위에서 아래로 긋는
+/// 서명이 새로고침으로 날아갈 수 있다. 웹은 고치지 않는다.
+/// - 서명 패드(`touch-none` · 인라인 `touch-action: none`)가 화면에 보이면 그동안 미리 끈다(present, 숨겨진 패드는 세지 않음). 누르는 순간에
+///   끄면 비동기 브리지가 늦어 맨 위에서 빠르게 그은 첫 획을 새로고침이 먼저 가로챌 수 있다(PR #9 pr-agent 리뷰).
+/// - 누른 곳과 그 부모 가운데 계산된 `touch-action` 이 `none` 인 것이 있으면 손을 뗄 때까지 끈다(off, 클래스를 못 찾는 경우 대비).
+/// - 둘 다 아니면 켠다. 브리지가 아직 없으면 준비 이벤트 때 다시 맞춘다.
+const pullToRefreshGuardScript = '''
+(() => {
+  if (window.__whalePullGuard) return;
+  window.__whalePullGuard = true;
+  let off = false;
+  let present = false;
+  let sent = null;
+  const sync = (force) => {
+    const enabled = !(off || present);
+    if (!force && enabled === sent) return;
+    const bridge = window.flutter_inappwebview;
+    if (bridge && typeof bridge.callHandler === 'function') {
+      sent = enabled;
+      bridge.callHandler('pullToRefresh', enabled).catch(() => {});
+    }
+  };
+  const PAD = '.touch-none,[style*="touch-action: none"],[style*="touch-action:none"]';
+  const scan = () => {
+    // 숨겨진 패드(display: none, 닫힌 dialog 안 등)는 빼고 화면에 보이는 패드만 센다 — 숨긴 채 두면 새로고침이 다시 켜지지 않는다.
+    const next = Array.from(document.querySelectorAll(PAD)).some((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden');
+    if (next !== present) {
+      present = next;
+      sync(false);
+    }
+  };
+  let queued = false;
+  const queueScan = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; scan(); });
+  };
+  new MutationObserver(queueScan).observe(document, {
+    // 속성은 거르지 않는다 — 모달 열림 상태를 data-state 같은 임의 속성으로 바꾸고 CSS 로 패드를 숨기는 경우도 다시 검사한다(한 프레임에 한 번).
+    childList: true, subtree: true, attributes: true,
+  });
+  document.addEventListener('DOMContentLoaded', scan);
+  // 닫힘 애니메이션 · 전환이 끝난 뒤 CSS 만으로 숨기는 경우(DOM 변화 없음)도 다시 검사한다.
+  document.addEventListener('transitionend', queueScan, true);
+  document.addEventListener('animationend', queueScan, true);
+  window.addEventListener('flutterInAppWebViewPlatformReady', () => sync(true));
+  // 뒤로 가기 캐시(bfcache)에서 문서가 되살아나면 DOMContentLoaded 가 다시 오지 않고, 앱은 그 사이 onLoadStart 로 새로고침을
+  // 켰다. 다시 검사하고 앱 상태를 맞춘다.
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    off = false;
+    present = Array.from(document.querySelectorAll(PAD)).some((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden');
+    sync(true);
+  });
+  const blocksPull = (node) => {
+    for (let el = node instanceof Element ? node : node && node.parentElement; el; el = el.parentElement) {
+      if (getComputedStyle(el).touchAction === 'none') return true;
+    }
+    return false;
+  };
+  document.addEventListener('touchstart', (event) => {
+    if (!off && blocksPull(event.target)) {
+      off = true;
+      sync(false);
+    }
+  }, { capture: true, passive: true });
+  const release = (event) => {
+    if (off && event.touches.length === 0) {
+      off = false;
+      sync(false);
+    }
+  };
+  document.addEventListener('touchend', release, { capture: true, passive: true });
+  document.addEventListener('touchcancel', release, { capture: true, passive: true });
+})();
+''';
+
+/// 기기 식별자 형식 — 앱(MainActivity · AppDelegate)이 기기 고유값에 앞말을 붙여 SHA-256 으로 바꾼 64자 소문자 16진수.
+final _deviceIdPattern = RegExp(r'^[0-9a-f]{64}$');
+
+/// 브리지 기능 `deviceId` (계획 결정 9). 웹 로그인이 쿠키 UUID 대신 쓰는 기기 식별자. 기기 고유값(Android ANDROID_ID ·
+/// iOS identifierForVendor)은 앱 밖으로 내보내지 않고 해시만 넘긴다. 2초 안에 못 읽거나 형식이 다르면 `failed`.
+/// [nativeGuarded] 가 false 면 넘기지 않는다(`failed`). Android 는 웹뷰가 문서 시작 스크립트를 지원할 때만 브리지 스크립트를 웹 주소의
+/// 맨 위 화면에 네이티브로 한정해 심는다. 지원하지 않는 오래된 웹뷰에서는 그 보장이 약하므로, 오래 남는 기기 식별자는 넘기지 않는다
+/// (웹은 실패하면 쿠키 UUID 로 로그인한다).
+BridgeHandler deviceIdHandler(
+  Future<String?> Function() read, {
+  Future<bool> Function()? nativeGuarded,
+}) => (_) async {
+  if (nativeGuarded != null && !await nativeGuarded()) {
+    throw StateError('웹뷰가 브리지를 맨 위 화면에 네이티브로 한정하지 못해 기기 식별자를 넘기지 않음');
+  }
+  final id = await read().timeout(const Duration(seconds: 2));
+  if (id == null || !_deviceIdPattern.hasMatch(id)) {
+    throw StateError('기기 식별자를 읽지 못함');
+  }
+  return {'deviceId': id};
+};

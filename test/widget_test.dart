@@ -65,6 +65,74 @@ void main() {
     });
   });
 
+  group('deviceIdHandler', () {
+    final hex = 'a' * 64;
+    test('64자 16진수 해시를 deviceId 로 돌려준다', () async {
+      expect(await deviceIdHandler(() async => hex)([]), {'deviceId': hex});
+    });
+
+    test('웹뷰가 브리지를 맨 위 화면에 네이티브로 한정하지 못하면 기기 식별자를 읽지도 넘기지도 않는다', () async {
+      var read = 0;
+      await expectLater(
+        deviceIdHandler(() async {
+          read++;
+          return hex;
+        }, nativeGuarded: () async => false)([]),
+        throwsStateError,
+      );
+      expect(read, 0);
+      expect(
+        await deviceIdHandler(() async => hex, nativeGuarded: () async => true)(
+          [],
+        ),
+        {'deviceId': hex},
+      );
+    });
+
+    test('못 읽었거나 해시 모양이 아니면 실패한다(원래 값이 새지 않게)', () async {
+      await expectLater(
+        deviceIdHandler(() async => null)([]),
+        throwsStateError,
+      );
+      await expectLater(
+        deviceIdHandler(() async => '9774d56d682e549c')([]),
+        throwsStateError,
+      );
+      await expectLater(
+        deviceIdHandler(() async => 'A' * 64)([]),
+        throwsStateError,
+      );
+    });
+
+    testWidgets('2초 안에 답이 없으면 실패한다', (tester) async {
+      Object? error;
+      Future(() => deviceIdHandler(() => Completer<String?>().future)([]))
+          .then((f) => f)
+          .catchError((Object e) => error = e);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(error, isA<TimeoutException>());
+    });
+  });
+
+  group('pullToRefreshHandler', () {
+    test('참 · 거짓 인자로 당겨서 새로고침을 켜고 끈다', () async {
+      final calls = <bool>[];
+      final handler = pullToRefreshHandler(calls.add);
+      expect(await handler([false]), isNull);
+      expect(await handler([true]), isNull);
+      expect(calls, [false, true]);
+    });
+
+    test('인자가 참 · 거짓이 아니면 끄지 않고 실패한다', () async {
+      final calls = <bool>[];
+      final handler = pullToRefreshHandler(calls.add);
+      await expectLater(() async => handler([]), throwsArgumentError);
+      await expectLater(() async => handler(['false']), throwsArgumentError);
+      expect(calls, isEmpty);
+    });
+  });
+
   group('flushCookies', () {
     testWidgets('Android 는 쿠키를 디스크에 쓰고 보고하지 않는다', (tester) async {
       var flushed = 0;

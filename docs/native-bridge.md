@@ -1,6 +1,6 @@
 # 앱 ↔ 웹 브리지 약속
 
-웹(`whale-erp-new-staff`)이 앱 기능을 부르는 방법이다. 앱 쪽 구현은 `lib/native_bridge.dart`, 웹 쪽은 `src/lib/native-bridge.ts`(웹 PR #87. 브리지 장애 때 다시 시도는 판정이 `src/lib/device-location.ts`, 화면이 `src/app/(app)/check-in/check-in-screen.tsx` · 웹 PR #91)에 둔다. 한쪽을 바꾸면 이 문서와 다른 쪽을 같이 고친다.
+웹(`whale-erp-new-staff`)이 앱 기능을 부르는 방법이다. 앱 쪽 구현은 `lib/native_bridge.dart`, 웹 쪽은 `src/lib/native-bridge.ts`(웹 PR #87. 브리지 장애 때 다시 시도는 판정이 `src/lib/device-location.ts`, 화면이 `src/app/(app)/check-in/check-in-screen.tsx` · 웹 PR #91. 로그인의 `deviceId` 는 `src/app/(auth)/login/login-form.tsx`)에 둔다. 한쪽을 바꾸면 이 문서와 다른 쪽을 같이 고친다.
 
 ## 앱 안인지 알아보기
 
@@ -66,6 +66,8 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 | --- | --- | --- | --- |
 | `appInfo` | 없음 | `{ version: "1.0.0", platform: "android" \| "ios" \| "other" }` | 브리지가 살아 있는지 확인, 앱 버전별로 기능 켜고 끄기. 웹은 `platform`이 셋 밖의 값이면 `malformed`로 본다 |
 | `measureLocation` | 없음 | 아래 「measureLocation」 | 출퇴근 탭 지도와 출근 · 퇴근 판정. 앱 안에서는 `navigator.geolocation` 대신 이것을 쓴다(계획 결정 8) |
+| `deviceId` | 없음 | `{ deviceId: "<64자 소문자 16진수>" }` | 웹 로그인이 쿠키 UUID 대신 쓰는 기기 식별자(계획 결정 9). 앱은 기기 고유값(Android `ANDROID_ID` · iOS `identifierForVendor`)에 앞말 `whale-staff-device:`를 붙여 SHA-256 으로 바꾼 값만 넘기고 원래 값은 앱 밖으로 내보내지 않는다. 앱을 다시 깔아도 대체로 같다(Android 8 이상은 서명 키 · 사용자별로 정해져 공장 초기화 전까지 같고, 7 이하는 기기 · 사용자 하나에 하나. Play 앱 서명을 쓰면 Play 서명 키 기준이라 로컬 서명 빌드와 값이 다르다. iOS 는 같은 회사 앱이 하나라도 남아 있으면). 못 읽으면 `failed` — 웹은 지금처럼 쿠키 UUID 를 쓴다. Android 는 웹뷰가 문서 시작 스크립트(`DOCUMENT_START_SCRIPT`)를 지원해 브리지를 맨 위 화면에 네이티브로 한정할 수 있을 때만 넘기고, 아니면 `failed` |
+| `pullToRefresh` | 참 · 거짓 하나 | `null` | **앱 안쪽용 — 웹 화면은 부르지 않는다.** 앱이 페이지 시작 때 심는 스크립트가, 서명 패드처럼 `touch-action: none`인 곳을 누르는 동안 앱의 당겨서 새로고침을 끄고(`false`) 손을 떼면 켠다(`true`). 인자가 참 · 거짓이 아니면 `failed` |
 
 ### measureLocation
 
@@ -82,4 +84,4 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 - **부작용 없음:** 다시 불러도 위치를 한 번 더 잴 뿐이다. 위치 수집 · 이용 확인자료는 웹이 지금처럼 서버에 남긴다(앱은 좌표를 저장하거나 서버로 보내지 않는다).
 - **겹친 호출:** 권한 창이 떠 있는 동안 온 호출은 같은 권한 결과를 기다린다.
 
-파일 받기(급여 PDF · 계약서)와 뒤로 가기 · 바텀시트 닫기는 브리지 없이 앱이 처리한다(웹 변경 없음, 2026-11-23). 다음에 붙일 기능 후보: 기기 식별자(계획 결정 9, 웹 로그인과 함께), 푸시 토큰(api 협의 뒤).
+파일 받기(급여 PDF · 계약서)와 뒤로 가기 · 바텀시트 닫기는 브리지 없이 앱이 처리한다(브리지 변경 없음, 2026-11-23. 급여 PDF 실패 안내는 웹 라우트가 상세로 돌려보내게 바뀌었다, 2026-11-24). 다음에 붙일 기능 후보: 푸시 토큰(api 협의 뒤).
