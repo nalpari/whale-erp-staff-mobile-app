@@ -65,6 +65,24 @@ void main() {
     });
   });
 
+  group('pullToRefreshHandler', () {
+    test('참 · 거짓 인자로 당겨서 새로고침을 켜고 끈다', () async {
+      final calls = <bool>[];
+      final handler = pullToRefreshHandler(calls.add);
+      expect(await handler([false]), isNull);
+      expect(await handler([true]), isNull);
+      expect(calls, [false, true]);
+    });
+
+    test('인자가 참 · 거짓이 아니면 끄지 않고 실패한다', () async {
+      final calls = <bool>[];
+      final handler = pullToRefreshHandler(calls.add);
+      await expectLater(() async => handler([]), throwsArgumentError);
+      await expectLater(() async => handler(['false']), throwsArgumentError);
+      expect(calls, isEmpty);
+    });
+  });
+
   group('flushCookies', () {
     testWidgets('Android 는 쿠키를 디스크에 쓰고 보고하지 않는다', (tester) async {
       var flushed = 0;

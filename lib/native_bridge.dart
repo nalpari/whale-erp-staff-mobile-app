@@ -99,3 +99,54 @@ BridgeHandler appInfoHandler({
         _ => 'other',
       },
     };
+
+/// 앱 안쪽 기능 `pullToRefresh`. 웹 화면이 부르는 것이 아니라 앱이 심은 [pullToRefreshGuardScript] 가 부른다.
+/// 인자 하나(참 · 거짓)로 당겨서 새로고침을 켜고 끈다. 인자가 참 · 거짓이 아니면 `failed`.
+BridgeHandler pullToRefreshHandler(
+  FutureOr<void> Function(bool enabled) setEnabled,
+) => (args) async {
+  final enabled = args.isEmpty ? null : args.first;
+  if (enabled is! bool) {
+    throw ArgumentError('pullToRefresh 인자는 참 · 거짓 하나: $args');
+  }
+  await setEnabled(enabled);
+  return null;
+};
+
+/// 페이지가 열릴 때 심는 스크립트. 서명 패드처럼 `touch-action: none` 인 곳을 누르는 동안 앱의 당겨서 새로고침을 끈다.
+/// Android 는 웹뷰 맨 위에서 아래로 끌면 앱(SwipeRefreshLayout)이 먼저 가로채 페이지를 새로 고치므로, 위에서 아래로 긋는
+/// 서명이 새로고침으로 날아갈 수 있다. 웹은 고치지 않는다 — 누른 곳과 그 부모 가운데 계산된 `touch-action` 이 `none` 인
+/// 것이 있으면 끄고, 손을 떼면(touchend · touchcancel) 다시 켠다. 브리지가 아직 없으면 아무것도 하지 않는다.
+const pullToRefreshGuardScript = '''
+(() => {
+  if (window.__whalePullGuard) return;
+  window.__whalePullGuard = true;
+  let off = false;
+  const call = (enabled) => {
+    const bridge = window.flutter_inappwebview;
+    if (bridge && typeof bridge.callHandler === 'function') {
+      bridge.callHandler('pullToRefresh', enabled).catch(() => {});
+    }
+  };
+  const blocksPull = (node) => {
+    for (let el = node instanceof Element ? node : node && node.parentElement; el; el = el.parentElement) {
+      if (getComputedStyle(el).touchAction === 'none') return true;
+    }
+    return false;
+  };
+  document.addEventListener('touchstart', (event) => {
+    if (!off && blocksPull(event.target)) {
+      off = true;
+      call(false);
+    }
+  }, { capture: true, passive: true });
+  const release = (event) => {
+    if (off && event.touches.length === 0) {
+      off = false;
+      call(true);
+    }
+  };
+  document.addEventListener('touchend', release, { capture: true, passive: true });
+  document.addEventListener('touchcancel', release, { capture: true, passive: true });
+})();
+''';

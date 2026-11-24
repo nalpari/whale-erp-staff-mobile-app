@@ -366,6 +366,8 @@ class _WebScreenState extends State<WebScreen> {
         currentPosition: readCurrentPosition,
         approximatePosition: readAnyPosition,
       ),
+      // 서명 패드를 누르는 동안 당겨서 새로고침을 끈다(pullToRefreshGuardScript 가 부름).
+      'pullToRefresh': pullToRefreshHandler(_refresh.setEnabled),
     },
   );
   // 앱이 화면에서 사라질 때(홈으로 · 다른 앱으로) 쿠키를 디스크에 쓴다. 최근 앱 화면으로 갈 때도 보통 불리지만, 런처가
@@ -746,6 +748,12 @@ class _WebScreenState extends State<WebScreen> {
                               UserScriptInjectionTime.AT_DOCUMENT_START,
                           forMainFrameOnly: true,
                         ),
+                        UserScript(
+                          source: pullToRefreshGuardScript,
+                          injectionTime:
+                              UserScriptInjectionTime.AT_DOCUMENT_START,
+                          forMainFrameOnly: true,
+                        ),
                       ]),
                       initialSettings: InAppWebViewSettings(
                         applicationNameForUserAgent: appUserAgent(
@@ -866,6 +874,8 @@ class _WebScreenState extends State<WebScreen> {
                         // 앱이 연 이동이 끝났으니 가로채기 예외 표시를 지운다(Android 는 loadUrl 에 shouldOverrideUrlLoading 을 안 부른다).
                         _openingInWebView = null;
                         _refresh.endRefreshing();
+                        // 서명 패드를 누른 채 페이지가 바뀌어 손 뗌을 못 받았어도 새 페이지에서는 당겨서 새로고침을 다시 켠다.
+                        _refresh.setEnabled(true);
                         if (_loaded) return;
                         // onLoadStop 은 그리기 전에 온다. 바로 걷으면 빈 흰 웹뷰가 비친다.
                         // 웹이 한 프레임 그린 뒤(rAF 두 번)에 스플래시를 걷는다.

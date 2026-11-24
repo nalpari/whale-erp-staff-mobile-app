@@ -66,6 +66,7 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 | --- | --- | --- | --- |
 | `appInfo` | 없음 | `{ version: "1.0.0", platform: "android" \| "ios" \| "other" }` | 브리지가 살아 있는지 확인, 앱 버전별로 기능 켜고 끄기. 웹은 `platform`이 셋 밖의 값이면 `malformed`로 본다 |
 | `measureLocation` | 없음 | 아래 「measureLocation」 | 출퇴근 탭 지도와 출근 · 퇴근 판정. 앱 안에서는 `navigator.geolocation` 대신 이것을 쓴다(계획 결정 8) |
+| `pullToRefresh` | 참 · 거짓 하나 | `null` | **앱 안쪽용 — 웹 화면은 부르지 않는다.** 앱이 페이지 시작 때 심는 스크립트가, 서명 패드처럼 `touch-action: none`인 곳을 누르는 동안 앱의 당겨서 새로고침을 끄고(`false`) 손을 떼면 켠다(`true`). 인자가 참 · 거짓이 아니면 `failed` |
 
 ### measureLocation
 
