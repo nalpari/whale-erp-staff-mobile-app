@@ -86,7 +86,8 @@ if (!hasReleaseKey) {
             logger.warn("android/key.properties 가 없어 release 를 debug 키로 서명합니다. 스토어에 올릴 수 없는 빌드입니다.")
         }
     }
-    tasks.matching { it.name == "packageRelease" }.configureEach {
+    // APK(packageRelease)와 앱 번들(signReleaseBundle) 둘 다.
+    tasks.matching { it.name == "packageRelease" || it.name == "signReleaseBundle" }.configureEach {
         dependsOn(warnDebugSignedRelease)
     }
 }

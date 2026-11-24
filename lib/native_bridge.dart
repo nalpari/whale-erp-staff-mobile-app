@@ -139,7 +139,7 @@ const pullToRefreshGuardScript = '''
   const PAD = '.touch-none,[style*="touch-action: none"],[style*="touch-action:none"]';
   const scan = () => {
     // 숨겨진 패드(display: none, 닫힌 dialog 안 등)는 빼고 화면에 보이는 패드만 센다 — 숨긴 채 두면 새로고침이 다시 켜지지 않는다.
-    const next = Array.from(document.querySelectorAll(PAD)).some((el) => el.getClientRects().length > 0);
+    const next = Array.from(document.querySelectorAll(PAD)).some((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden');
     if (next !== present) {
       present = next;
       sync(false);
