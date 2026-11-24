@@ -40,7 +40,7 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
-        // 기기 식별자(계획 결정 9). ANDROID_ID 는 Android 8 이상에서 앱 서명 키 · 사용자별로 정해져 앱을 다시 깔아도 같다(7 이하는 기기 하나에 하나). 원래 값은 앱 밖으로 내보내지
+        // 기기 식별자(계획 결정 9). ANDROID_ID 는 Android 8 이상에서 앱 서명 키 · 사용자별로 정해져 앱을 다시 깔아도 같다(7 이하는 기기 · 사용자 하나에 하나). 원래 값은 앱 밖으로 내보내지
         // 않고, 앞말을 붙여 SHA-256 으로 바꾼 64자 16진수만 돌려준다(iOS AppDelegate 와 같은 방식). 읽지 못하면 null.
         MethodChannel(messenger, "kr.co.whaleerp.staff/device").setMethodCallHandler { call, result ->
             if (call.method == "deviceId") {
