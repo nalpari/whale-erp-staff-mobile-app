@@ -281,6 +281,29 @@ const dialogOrderScript = '''
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
 String appUserAgent(String version) => 'WhaleStaffApp/$version';
 
+/// 로그인 쿠키를 디스크에 쓴다(Android `CookieManager.flush`). 앱이 화면에서 사라질 때 부른다.
+/// Android 웹뷰는 쿠키를 메모리에 두었다가 가끔 디스크에 쓰므로, 로그인 직후 앱을 내리고 강제 종료하면 자동 로그인
+/// 쿠키가 사라질 수 있다. iOS(WKWebView)는 쿠키를 스스로 저장하고 플러그인에도 flush 가 없어 부르지 않는다.
+/// 실패하거나 2초 안에 끝나지 않으면 보고만 한다(앱이 내려가는 중이라 사용자에게 알릴 일이 아니다).
+Future<void> flushCookies({
+  required TargetPlatform platform,
+  required Future<void> Function() flush,
+}) async {
+  if (platform != TargetPlatform.android) return;
+  try {
+    await flush().timeout(const Duration(seconds: 2));
+  } catch (e, s) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: e,
+        stack: s,
+        library: 'main',
+        context: ErrorDescription('앱을 내릴 때 쿠키를 디스크에 쓰지 못함'),
+      ),
+    );
+  }
+}
+
 /// 앱 버전을 읽는다. 실패하거나, 2초 안에 끝나지 않거나, 비어 있으면 `unknown`.
 /// main() 은 첫 프레임을 미룬 채 이 값을 기다리므로, 여기서 예외가 새거나 멈추면 앱이 OS 스플래시에서 멈춘다.
 Future<String> readAppVersion(Future<PackageInfo> Function() read) async {
@@ -340,6 +363,8 @@ class _WebScreenState extends State<WebScreen> {
       ),
     },
   );
+  // 앱이 화면에서 사라질 때(홈으로 · 다른 앱으로 · 최근 앱 화면) 쿠키를 디스크에 쓴다. 최근 앱에서 밀어 끄는 것도 이 단계를 거친다.
+  late final AppLifecycleListener _lifecycle;
   late final _refresh = PullToRefreshController(
     settings: PullToRefreshSettings(color: primary),
     onRefresh: () => _controller?.reload(),
@@ -403,6 +428,23 @@ class _WebScreenState extends State<WebScreen> {
       }
     }
     return result.access;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(
+      onHide: () => flushCookies(
+        platform: defaultTargetPlatform,
+        flush: () => CookieManager.instance().flush(),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
   }
 
   Future<bool> _ensureLocationPermission() async =>

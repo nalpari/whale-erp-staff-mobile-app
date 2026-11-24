@@ -64,6 +64,46 @@ void main() {
     });
   });
 
+  group('flushCookies', () {
+    test('Android 는 쿠키를 디스크에 쓴다', () async {
+      var flushed = 0;
+      await flushCookies(
+        platform: TargetPlatform.android,
+        flush: () async => flushed++,
+      );
+      expect(flushed, 1);
+    });
+
+    test('iOS 는 웹뷰가 스스로 저장하므로 부르지 않는다', () async {
+      var flushed = 0;
+      await flushCookies(
+        platform: TargetPlatform.iOS,
+        flush: () async => flushed++,
+      );
+      expect(flushed, 0);
+    });
+
+    test('실패해도 예외를 밖으로 내지 않는다', () async {
+      await flushCookies(
+        platform: TargetPlatform.android,
+        flush: () async => throw Exception('채널 오류'),
+      );
+    });
+
+    testWidgets('응답이 없으면 2초 뒤 끝내고 오류를 보고한다', (tester) async {
+      var done = false;
+      flushCookies(
+        platform: TargetPlatform.android,
+        flush: () => Completer<void>().future,
+      ).then((_) => done = true);
+      await tester.pump(const Duration(milliseconds: 1999));
+      expect(done, isFalse);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(done, isTrue);
+      expect(tester.takeException(), isA<TimeoutException>());
+    });
+  });
+
   test('위치는 웹 주소와 같은 출처(https · 호스트 · 포트)만 허락한다', () {
     expect(
       isTrustedOrigin('https://staff-dev.whaleerp.co.kr:443', base),
