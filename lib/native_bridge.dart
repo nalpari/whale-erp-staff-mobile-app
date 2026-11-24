@@ -152,10 +152,19 @@ const pullToRefreshGuardScript = '''
     requestAnimationFrame(() => { queued = false; scan(); });
   };
   new MutationObserver(queueScan).observe(document, {
-    childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'open', 'hidden'],
+    // 속성은 거르지 않는다 — 모달 열림 상태를 data-state 같은 임의 속성으로 바꾸고 CSS 로 패드를 숨기는 경우도 다시 검사한다(한 프레임에 한 번).
+    childList: true, subtree: true, attributes: true,
   });
   document.addEventListener('DOMContentLoaded', scan);
   window.addEventListener('flutterInAppWebViewPlatformReady', () => sync(true));
+  // 뒤로 가기 캐시(bfcache)에서 문서가 되살아나면 DOMContentLoaded 가 다시 오지 않고, 앱은 그 사이 onLoadStart 로 새로고침을
+  // 켰다. 다시 검사하고 앱 상태를 맞춘다.
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    off = false;
+    present = Array.from(document.querySelectorAll(PAD)).some((el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden');
+    sync(true);
+  });
   const blocksPull = (node) => {
     for (let el = node instanceof Element ? node : node && node.parentElement; el; el = el.parentElement) {
       if (getComputedStyle(el).touchAction === 'none') return true;
