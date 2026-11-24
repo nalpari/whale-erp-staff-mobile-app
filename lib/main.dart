@@ -281,6 +281,34 @@ const dialogOrderScript = '''
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
 String appUserAgent(String version) => 'WhaleStaffApp/$version';
 
+/// 로그인 쿠키를 디스크에 쓴다(Android `CookieManager.flush`). 앱이 화면에서 사라질 때 부른다.
+/// Android 웹뷰는 쿠키를 메모리에 두었다가 가끔 디스크에 쓰므로, 로그인 직후 앱을 내리고 강제 종료하면 자동 로그인
+/// 쿠키가 사라질 수 있다. iOS(WKWebView)는 쿠키를 스스로 저장하고 플러그인에도 flush 가 없어 부르지 않는다.
+/// Android 는 앱 쪽 채널(`cookieChannel`, MainActivity)로 부른다. 플러그인의 flush 는 성공해도 답을 돌려주지 않아
+/// 앱을 내릴 때마다 답을 기다리는 콜백이 남았기 때문이다. 2초까지만 기다리고, 실패 · 시간 초과는 보고만 한다
+/// (앱이 내려가는 중이라 사용자에게 알릴 일이 아니다).
+Future<void> flushCookies({
+  required TargetPlatform platform,
+  required Future<void> Function() flush,
+}) async {
+  if (platform != TargetPlatform.android) return;
+  try {
+    await flush().timeout(const Duration(seconds: 2));
+  } catch (e, s) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: e,
+        stack: s,
+        library: 'main',
+        context: ErrorDescription('앱을 내릴 때 쿠키를 디스크에 쓰지 못함'),
+      ),
+    );
+  }
+}
+
+/// 웹뷰 쿠키를 디스크에 쓰는 앱 쪽 채널(Android MainActivity). 쓰고 나서 바로 답한다.
+const cookieChannel = MethodChannel('kr.co.whaleerp.staff/cookies');
+
 /// 앱 버전을 읽는다. 실패하거나, 2초 안에 끝나지 않거나, 비어 있으면 `unknown`.
 /// main() 은 첫 프레임을 미룬 채 이 값을 기다리므로, 여기서 예외가 새거나 멈추면 앱이 OS 스플래시에서 멈춘다.
 Future<String> readAppVersion(Future<PackageInfo> Function() read) async {
@@ -340,6 +368,10 @@ class _WebScreenState extends State<WebScreen> {
       ),
     },
   );
+  // 앱이 화면에서 사라질 때(홈으로 · 다른 앱으로) 쿠키를 디스크에 쓴다. 최근 앱 화면으로 갈 때도 보통 불리지만, 런처가
+  // 앱을 살려 두면 inactive 에서 멈출 수 있어 확인하지 않았다. 최근 앱에서 밀어 끄는 동작에는 따로 콜백이 없고 그 전에
+  // 쓴 것에 기댄다. 에뮬레이터에서 확인한 것은 홈 경로뿐이다.
+  late final AppLifecycleListener _lifecycle;
   late final _refresh = PullToRefreshController(
     settings: PullToRefreshSettings(color: primary),
     onRefresh: () => _controller?.reload(),
@@ -403,6 +435,27 @@ class _WebScreenState extends State<WebScreen> {
       }
     }
     return result.access;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    void persistCookies() => flushCookies(
+      platform: defaultTargetPlatform,
+      flush: () => cookieChannel.invokeMethod<void>('flush'),
+    );
+    // 최근 앱 화면에서는 inactive 에 머물고 hide 까지 가지 않는 런처가 있어, 거기서 바로 밀어 끄면 저장이 빠진다.
+    // inactive 에서도 쓰고, 그 뒤 바뀐 쿠키를 위해 hide 에서도 한 번 더 쓴다(여러 번 불려도 된다).
+    _lifecycle = AppLifecycleListener(
+      onInactive: persistCookies,
+      onHide: persistCookies,
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
   }
 
   Future<bool> _ensureLocationPermission() async =>

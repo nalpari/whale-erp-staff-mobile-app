@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -60,6 +61,48 @@ void main() {
       expect(version, isNull);
       await tester.pump(const Duration(milliseconds: 1));
       expect(version, 'unknown');
+      expect(tester.takeException(), isA<TimeoutException>());
+    });
+  });
+
+  group('flushCookies', () {
+    testWidgets('Android 는 쿠키를 디스크에 쓰고 보고하지 않는다', (tester) async {
+      var flushed = 0;
+      await flushCookies(
+        platform: TargetPlatform.android,
+        flush: () async => flushed++,
+      );
+      expect(flushed, 1);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('iOS 는 웹뷰가 스스로 저장하므로 부르지 않는다', () async {
+      var flushed = 0;
+      await flushCookies(
+        platform: TargetPlatform.iOS,
+        flush: () async => flushed++,
+      );
+      expect(flushed, 0);
+    });
+
+    testWidgets('실패하면 예외를 밖으로 내지 않고 보고한다', (tester) async {
+      await flushCookies(
+        platform: TargetPlatform.android,
+        flush: () async => throw PlatformException(code: '채널 오류'),
+      );
+      expect(tester.takeException(), isA<PlatformException>());
+    });
+
+    testWidgets('응답이 없으면 2초 뒤 끝내고 시간 초과를 보고한다', (tester) async {
+      var done = false;
+      flushCookies(
+        platform: TargetPlatform.android,
+        flush: () => Completer<void>().future,
+      ).then((_) => done = true);
+      await tester.pump(const Duration(milliseconds: 1999));
+      expect(done, isFalse);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(done, isTrue);
       expect(tester.takeException(), isA<TimeoutException>());
     });
   });
