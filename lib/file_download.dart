@@ -88,11 +88,13 @@ bool isPayslipPdf(Uri uri, Uri base) =>
 /// 웹이 급여명세서 PDF 받기에 실패해 돌려보낸 명세서 상세(`/pay/<id>?download=…`)인지. 웹 브랜치 `magmar`(2026-11-24)부터 실패는 평문
 /// 대신 상세로 3xx(Next `redirect()`, 307) 하고 상세가 안내를 띄운다. 로그인 화면이 아니라 안내 화면이라, 같은 받기가 곧바로 또 화면을 받아도 「로그인 정보를
 /// 확인하지 못함」(되풀이 막기)으로 보지 않고 그대로 연다. 같은 출처 · https 일 때만.
+/// 잘못된 명세서 번호면 웹이 목록(`/pay`)으로 돌려보내므로 목록도 안내 화면으로 본다(로그인 화면이 아니라 되풀이할 일이 없다).
 bool isPayslipFailurePage(Uri uri, Uri base) =>
     uri.scheme == 'https' &&
     isSameOrigin(uri, base) &&
-    RegExp(r'^/pay/[^/]+/?$').hasMatch(uri.path) &&
-    uri.queryParameters.containsKey('download');
+    (RegExp(r'^/pay/?$').hasMatch(uri.path) ||
+        (RegExp(r'^/pay/[^/]+/?$').hasMatch(uri.path) &&
+            uri.queryParameters.containsKey('download')));
 
 /// 받기가 화면(HTML)으로 끝나 그 화면을 웹뷰에 열 때의 기록. 같은 받기가 15초 안에 또 화면으로 끝나면 로그인 되풀이로 본다.
 typedef OpenInWebViewRecord = ({Uri url, DateTime at});

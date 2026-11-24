@@ -641,6 +641,10 @@ void main() {
       ),
       isTrue,
     );
+    // 잘못된 명세서 번호면 웹이 목록으로 돌려보낸다. 목록도 안내 화면이다.
+    expect(check('https://staff-dev.whaleerp.co.kr/pay'), isTrue);
+    expect(check('https://staff-dev.whaleerp.co.kr/pay/'), isTrue);
+    expect(check('http://staff-dev.whaleerp.co.kr/pay'), isFalse);
     // 안내가 없는 상세 · 로그인 화면 · 다른 출처 · http 는 아니다(로그인 되풀이 막기는 그대로).
     expect(check('https://staff-dev.whaleerp.co.kr/pay/12'), isFalse);
     expect(

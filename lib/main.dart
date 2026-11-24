@@ -874,12 +874,13 @@ class _WebScreenState extends State<WebScreen> {
                         _page++;
                         _dialogTimedOutAt = null;
                       },
+                      // 문서가 새로 시작될 때만 당겨서 새로고침을 다시 켠다(서명 패드를 누른 채 페이지가 바뀌어 손 뗌을 못 받은 경우).
+                      // onLoadStop 에서 켜면, 서명 패드가 보인 뒤 이미지 등이 아직 로딩 중일 때 그리기 시작한 서명 보호가 로딩 완료로 풀린다.
+                      onLoadStart: (_, _) => _refresh.setEnabled(true),
                       onLoadStop: (controller, _) async {
                         // 앱이 연 이동이 끝났으니 가로채기 예외 표시를 지운다(Android 는 loadUrl 에 shouldOverrideUrlLoading 을 안 부른다).
                         _openingInWebView = null;
                         _refresh.endRefreshing();
-                        // 서명 패드를 누른 채 페이지가 바뀌어 손 뗌을 못 받았어도 새 페이지에서는 당겨서 새로고침을 다시 켠다.
-                        _refresh.setEnabled(true);
                         if (_loaded) return;
                         // onLoadStop 은 그리기 전에 온다. 바로 걷으면 빈 흰 웹뷰가 비친다.
                         // 웹이 한 프레임 그린 뒤(rAF 두 번)에 스플래시를 걷는다.
