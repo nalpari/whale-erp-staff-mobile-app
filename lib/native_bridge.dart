@@ -156,6 +156,9 @@ const pullToRefreshGuardScript = '''
     childList: true, subtree: true, attributes: true,
   });
   document.addEventListener('DOMContentLoaded', scan);
+  // 닫힘 애니메이션 · 전환이 끝난 뒤 CSS 만으로 숨기는 경우(DOM 변화 없음)도 다시 검사한다.
+  document.addEventListener('transitionend', queueScan, true);
+  document.addEventListener('animationend', queueScan, true);
   window.addEventListener('flutterInAppWebViewPlatformReady', () => sync(true));
   // 뒤로 가기 캐시(bfcache)에서 문서가 되살아나면 DOMContentLoaded 가 다시 오지 않고, 앱은 그 사이 onLoadStart 로 새로고침을
   // 켰다. 다시 검사하고 앱 상태를 맞춘다.
