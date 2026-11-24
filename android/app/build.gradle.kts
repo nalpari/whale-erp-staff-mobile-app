@@ -61,7 +61,10 @@ android {
             signingConfig = if (hasReleaseKey) {
                 signingConfigs.getByName("release")
             } else {
-                logger.warn("android/key.properties 가 없어 release 를 debug 키로 서명합니다. 스토어에 올릴 수 없는 빌드입니다.")
+                // release 작업을 돌릴 때만 경고한다(이 블록은 debug 빌드에서도 설정 단계에서 실행된다).
+                if (gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }) {
+                    logger.warn("android/key.properties 가 없어 release 를 debug 키로 서명합니다. 스토어에 올릴 수 없는 빌드입니다.")
+                }
                 signingConfigs.getByName("debug")
             }
         }

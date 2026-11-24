@@ -5,7 +5,8 @@ import 'dart:io';
 /// 웹뷰 대신 앱이 받는 파일(계획 결정 10: 받은 파일은 공유 시트로 연다).
 ///
 /// - 급여 PDF: `/pay/<id>/pdf` 가 같은 호스트에서 `application/pdf` attachment 로 내려준다. 로그인이 httpOnly 쿠키라
-///   웹뷰 쿠키를 실어 받는다. 실패하면 이 라우트는 평문 글자(text/plain)를 돌려주거나 로그인 화면으로 보낸다.
+///   웹뷰 쿠키를 실어 받는다. 실패하면 이 라우트는 명세서 상세(`/pay/<id>?download=…`, 번호가 잘못되면 `/pay` 목록)로
+///   돌려보내거나(옛 웹은 평문 text/plain) 로그인 화면으로 보낸다.
 /// - 근로계약서: `/contracts/<id>/documents/<docId>` 가 S3 서명 주소(300초, attachment)로 302 이동한다. 다른 호스트라
 ///   예전에는 바깥 브라우저로 나갔다. 서명 주소 자체가 권한이라 쿠키 없이 받는다.
 
@@ -84,14 +85,39 @@ bool isPayslipPdf(Uri uri, Uri base) =>
     isSameOrigin(uri, base) &&
     RegExp(r'^/pay/[^/]+/pdf/?$').hasMatch(uri.path);
 
-/// 웹이 급여명세서 PDF 받기에 실패해 돌려보낸 명세서 상세(`/pay/<id>?download=…`)인지. 웹 PR(2026-11-24)부터 실패는 평문 대신
-/// 상세로 302 하고 상세가 안내를 띄운다. 로그인 화면이 아니라 안내 화면이라, 같은 받기가 곧바로 또 화면을 받아도 「로그인 정보를
+/// 웹이 급여명세서 PDF 받기에 실패해 돌려보낸 명세서 상세(`/pay/<id>?download=…`)인지. 웹 브랜치 `magmar`(2026-11-24)부터 실패는 평문
+/// 대신 상세로 3xx(Next `redirect()`, 307) 하고 상세가 안내를 띄운다. 로그인 화면이 아니라 안내 화면이라, 같은 받기가 곧바로 또 화면을 받아도 「로그인 정보를
 /// 확인하지 못함」(되풀이 막기)으로 보지 않고 그대로 연다. 같은 출처 · https 일 때만.
 bool isPayslipFailurePage(Uri uri, Uri base) =>
     uri.scheme == 'https' &&
     isSameOrigin(uri, base) &&
     RegExp(r'^/pay/[^/]+/?$').hasMatch(uri.path) &&
     uri.queryParameters.containsKey('download');
+
+/// 받기가 화면(HTML)으로 끝나 그 화면을 웹뷰에 열 때의 기록. 같은 받기가 15초 안에 또 화면으로 끝나면 로그인 되풀이로 본다.
+typedef OpenInWebViewRecord = ({Uri url, DateTime at});
+
+/// 받기([url])가 화면([page])으로 끝났을 때 로그인 되풀이인지와 다음 기록을 정한다.
+/// 받기 실패 안내 화면([isPayslipFailurePage])은 로그인 되풀이가 아니므로 15초 되풀이 막기에서 빼고 기록도 지운다
+/// (그 뒤에 로그인 화면이 와도 첫 번째로 본다). 되풀이면 기록을 지운다.
+({bool repeated, OpenInWebViewRecord? next}) openInWebViewGuard({
+  required OpenInWebViewRecord? last,
+  required Uri url,
+  required Uri page,
+  required Uri base,
+  required DateTime now,
+}) {
+  final failurePage = isPayslipFailurePage(page, base);
+  final repeated =
+      !failurePage &&
+      last != null &&
+      last.url == url &&
+      now.difference(last.at) < const Duration(seconds: 15);
+  return (
+    repeated: repeated,
+    next: repeated || failurePage ? null : (url: url, at: now),
+  );
+}
 
 /// `Content-Disposition` 에서 파일 이름을 꺼낸다. `filename*=UTF-8''...` 를 먼저 보고, 없으면 `filename="..."`.
 /// 둘 다 없으면 주소의 마지막 경로, 그것도 쓸 수 없으면 [fallback]. 경로 구분자 같은 위험한 글자는 지운다.

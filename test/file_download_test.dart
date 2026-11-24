@@ -549,6 +549,85 @@ void main() {
     expect(redactUrls('쿼리 없는 https://a.b/c'), '쿼리 없는 https://a.b/c');
   });
 
+  group('openInWebViewGuard', () {
+    final base = Uri.parse('https://staff-dev.whaleerp.co.kr');
+    final pdf = Uri.parse('https://staff-dev.whaleerp.co.kr/pay/12/pdf');
+    final login = Uri.parse(
+      'https://staff-dev.whaleerp.co.kr/login?next=/pay/12',
+    );
+    final failure = Uri.parse(
+      'https://staff-dev.whaleerp.co.kr/pay/12?download=failed',
+    );
+    final t0 = DateTime(2026, 11, 24, 12);
+
+    test('같은 받기가 15초 안에 또 로그인 화면이면 되풀이로 보고 기록을 지운다', () {
+      final first = openInWebViewGuard(
+        last: null,
+        url: pdf,
+        page: login,
+        base: base,
+        now: t0,
+      );
+      expect(first.repeated, isFalse);
+      expect(first.next, (url: pdf, at: t0));
+      final again = openInWebViewGuard(
+        last: first.next,
+        url: pdf,
+        page: login,
+        base: base,
+        now: t0.add(const Duration(seconds: 14)),
+      );
+      expect(again.repeated, isTrue);
+      expect(again.next, isNull);
+    });
+
+    test('15초가 지났거나 다른 받기면 되풀이가 아니다', () {
+      final last = (url: pdf, at: t0);
+      expect(
+        openInWebViewGuard(
+          last: last,
+          url: pdf,
+          page: login,
+          base: base,
+          now: t0.add(const Duration(seconds: 15)),
+        ).repeated,
+        isFalse,
+      );
+      expect(
+        openInWebViewGuard(
+          last: last,
+          url: Uri.parse('https://staff-dev.whaleerp.co.kr/pay/13/pdf'),
+          page: login,
+          base: base,
+          now: t0.add(const Duration(seconds: 1)),
+        ).repeated,
+        isFalse,
+      );
+    });
+
+    test('실패 안내 화면은 15초 안에 다시 와도 되풀이가 아니고 기록을 남기지 않는다', () {
+      final last = (url: pdf, at: t0);
+      final result = openInWebViewGuard(
+        last: last,
+        url: pdf,
+        page: failure,
+        base: base,
+        now: t0.add(const Duration(seconds: 1)),
+      );
+      expect(result.repeated, isFalse);
+      expect(result.next, isNull);
+      // 기록이 지워졌으니 그 뒤의 로그인 화면도 첫 번째로 본다.
+      final next = openInWebViewGuard(
+        last: result.next,
+        url: pdf,
+        page: login,
+        base: base,
+        now: t0.add(const Duration(seconds: 2)),
+      );
+      expect(next.repeated, isFalse);
+    });
+  });
+
   test('받기 실패 안내 화면은 같은 출처 https 의 /pay/<id>?download= 만', () {
     final base = Uri.parse('https://staff-dev.whaleerp.co.kr');
     bool check(String url) => isPayslipFailurePage(Uri.parse(url), base);
