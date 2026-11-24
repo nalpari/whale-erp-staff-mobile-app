@@ -184,7 +184,16 @@ final _deviceIdPattern = RegExp(r'^[0-9a-f]{64}$');
 
 /// 브리지 기능 `deviceId` (계획 결정 9). 웹 로그인이 쿠키 UUID 대신 쓰는 기기 식별자. 기기 고유값(Android ANDROID_ID ·
 /// iOS identifierForVendor)은 앱 밖으로 내보내지 않고 해시만 넘긴다. 2초 안에 못 읽거나 형식이 다르면 `failed`.
-BridgeHandler deviceIdHandler(Future<String?> Function() read) => (_) async {
+/// [nativeGuarded] 가 false 면 넘기지 않는다(`failed`). Android 는 웹뷰가 문서 시작 스크립트를 지원할 때만 브리지 스크립트를 웹 주소의
+/// 맨 위 화면에 네이티브로 한정해 심는다. 지원하지 않는 오래된 웹뷰에서는 그 보장이 약하므로, 오래 남는 기기 식별자는 넘기지 않는다
+/// (웹은 실패하면 쿠키 UUID 로 로그인한다).
+BridgeHandler deviceIdHandler(
+  Future<String?> Function() read, {
+  Future<bool> Function()? nativeGuarded,
+}) => (_) async {
+  if (nativeGuarded != null && !await nativeGuarded()) {
+    throw StateError('웹뷰가 브리지를 맨 위 화면에 네이티브로 한정하지 못해 기기 식별자를 넘기지 않음');
+  }
   final id = await read().timeout(const Duration(seconds: 2));
   if (id == null || !_deviceIdPattern.hasMatch(id)) {
     throw StateError('기기 식별자를 읽지 못함');

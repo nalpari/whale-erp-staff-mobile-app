@@ -61,13 +61,7 @@ android {
             signingConfig = if (hasReleaseKey) {
                 signingConfigs.getByName("release")
             } else {
-                // release 작업이 실제로 실행될 때만 경고한다. 이 블록은 debug 빌드에서도 설정 단계에서 실행되고,
-                // 요청한 작업 이름(`:app:assemble` 등)만으로는 release 가 함께 도는지 알 수 없어 작업 그래프로 본다.
-                gradle.taskGraph.whenReady {
-                    if (allTasks.any { it.project == project && it.name.contains("Release") }) {
-                        logger.warn("android/key.properties 가 없어 release 를 debug 키로 서명합니다. 스토어에 올릴 수 없는 빌드입니다.")
-                    }
-                }
+                // 경고는 아래 packageRelease 작업이 실제로 실행될 때 띄운다(설정 단계 · 구성 캐시와 상관없이).
                 signingConfigs.getByName("debug")
             }
         }
@@ -82,4 +76,17 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+// 서명 키 없이 release 를 만들면 경고한다. 출력이 없는 작업이라 매번 실행되고(최신 상태로 건너뛰지 않음), 실행 단계에서 띄우므로
+// `:app:assemble` 처럼 묶음 작업으로 빌드해도, Gradle 구성 캐시를 다시 써도 빠지지 않는다. release 패키징 작업이 이 작업에 기댄다.
+if (!hasReleaseKey) {
+    val warnDebugSignedRelease = tasks.register("warnDebugSignedRelease") {
+        doLast {
+            logger.warn("android/key.properties 가 없어 release 를 debug 키로 서명합니다. 스토어에 올릴 수 없는 빌드입니다.")
+        }
+    }
+    tasks.matching { it.name == "packageRelease" }.configureEach {
+        dependsOn(warnDebugSignedRelease)
+    }
 }

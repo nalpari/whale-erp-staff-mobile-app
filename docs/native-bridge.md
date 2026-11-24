@@ -66,7 +66,7 @@ const result = await window.flutter_inappwebview.callHandler("appInfo");
 | --- | --- | --- | --- |
 | `appInfo` | 없음 | `{ version: "1.0.0", platform: "android" \| "ios" \| "other" }` | 브리지가 살아 있는지 확인, 앱 버전별로 기능 켜고 끄기. 웹은 `platform`이 셋 밖의 값이면 `malformed`로 본다 |
 | `measureLocation` | 없음 | 아래 「measureLocation」 | 출퇴근 탭 지도와 출근 · 퇴근 판정. 앱 안에서는 `navigator.geolocation` 대신 이것을 쓴다(계획 결정 8) |
-| `deviceId` | 없음 | `{ deviceId: "<64자 소문자 16진수>" }` | 웹 로그인이 쿠키 UUID 대신 쓰는 기기 식별자(계획 결정 9). 앱은 기기 고유값(Android `ANDROID_ID` · iOS `identifierForVendor`)에 앞말 `whale-staff-device:`를 붙여 SHA-256 으로 바꾼 값만 넘기고 원래 값은 앱 밖으로 내보내지 않는다. 앱을 다시 깔아도 대체로 같다(Android 8 이상은 서명 키 · 사용자별로 정해져 공장 초기화 전까지 같고, 7 이하는 기기 · 사용자 하나에 하나. Play 앱 서명을 쓰면 Play 서명 키 기준이라 로컬 서명 빌드와 값이 다르다. iOS 는 같은 회사 앱이 하나라도 남아 있으면). 못 읽으면 `failed` — 웹은 지금처럼 쿠키 UUID 를 쓴다 |
+| `deviceId` | 없음 | `{ deviceId: "<64자 소문자 16진수>" }` | 웹 로그인이 쿠키 UUID 대신 쓰는 기기 식별자(계획 결정 9). 앱은 기기 고유값(Android `ANDROID_ID` · iOS `identifierForVendor`)에 앞말 `whale-staff-device:`를 붙여 SHA-256 으로 바꾼 값만 넘기고 원래 값은 앱 밖으로 내보내지 않는다. 앱을 다시 깔아도 대체로 같다(Android 8 이상은 서명 키 · 사용자별로 정해져 공장 초기화 전까지 같고, 7 이하는 기기 · 사용자 하나에 하나. Play 앱 서명을 쓰면 Play 서명 키 기준이라 로컬 서명 빌드와 값이 다르다. iOS 는 같은 회사 앱이 하나라도 남아 있으면). 못 읽으면 `failed` — 웹은 지금처럼 쿠키 UUID 를 쓴다. Android 는 웹뷰가 문서 시작 스크립트(`DOCUMENT_START_SCRIPT`)를 지원해 브리지를 맨 위 화면에 네이티브로 한정할 수 있을 때만 넘기고, 아니면 `failed` |
 | `pullToRefresh` | 참 · 거짓 하나 | `null` | **앱 안쪽용 — 웹 화면은 부르지 않는다.** 앱이 페이지 시작 때 심는 스크립트가, 서명 패드처럼 `touch-action: none`인 곳을 누르는 동안 앱의 당겨서 새로고침을 끄고(`false`) 손을 떼면 켠다(`true`). 인자가 참 · 거짓이 아니면 `failed` |
 
 ### measureLocation

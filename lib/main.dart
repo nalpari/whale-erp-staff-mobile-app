@@ -370,6 +370,11 @@ class _WebScreenState extends State<WebScreen> {
         () =>
             const MethodChannel('kr.co.whaleerp.staff/device')
                 .invokeMethod<String>('deviceId'),
+        nativeGuarded: () async =>
+            defaultTargetPlatform != TargetPlatform.android ||
+            await WebViewFeature.isFeatureSupported(
+              WebViewFeature.DOCUMENT_START_SCRIPT,
+            ),
       ),
       // 서명 패드를 누르는 동안 당겨서 새로고침을 끈다(pullToRefreshGuardScript 가 부름).
       'pullToRefresh': pullToRefreshHandler(_refresh.setEnabled),

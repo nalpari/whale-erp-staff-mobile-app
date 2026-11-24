@@ -71,6 +71,24 @@ void main() {
       expect(await deviceIdHandler(() async => hex)([]), {'deviceId': hex});
     });
 
+    test('웹뷰가 브리지를 맨 위 화면에 네이티브로 한정하지 못하면 기기 식별자를 읽지도 넘기지도 않는다', () async {
+      var read = 0;
+      await expectLater(
+        deviceIdHandler(() async {
+          read++;
+          return hex;
+        }, nativeGuarded: () async => false)([]),
+        throwsStateError,
+      );
+      expect(read, 0);
+      expect(
+        await deviceIdHandler(() async => hex, nativeGuarded: () async => true)(
+          [],
+        ),
+        {'deviceId': hex},
+      );
+    });
+
     test('못 읽었거나 해시 모양이 아니면 실패한다(원래 값이 새지 않게)', () async {
       await expectLater(
         deviceIdHandler(() async => null)([]),
