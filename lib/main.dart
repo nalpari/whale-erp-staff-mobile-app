@@ -568,8 +568,11 @@ class _WebScreenState extends State<WebScreen> {
           // 접속이 끝나 로그인 화면이 온 경우 등. HTML 이 온 최종 주소(로그인 · 상세)를 연다. 웹이 로그인 뒤 돌려보낸다.
           // 쿠키를 싣는 같은 출처 받기에서만 이렇게 한다. S3 등 다른 곳의 HTML 은 받기 실패로 본다
           // (그 주소를 다시 열면 같은 가로채기로 되풀이된다).
+          // 받기 실패 안내 화면(명세서 상세 ?download=)은 로그인 되풀이가 아니라 되풀이 막기에서 뺀다.
+          final failurePage = isPayslipFailurePage(page, _base);
           final last = _lastOpenInWebView;
           final repeated =
+              !failurePage &&
               last != null &&
               last.url == url &&
               DateTime.now().difference(last.at) < const Duration(seconds: 15);
@@ -581,7 +584,9 @@ class _WebScreenState extends State<WebScreen> {
               message: '로그인 정보를 확인하지 못했어요. 앱을 다시 열고 시도해 주세요.',
             );
           } else if (withCookies && isTrustedOrigin(page.origin, _base)) {
-            _lastOpenInWebView = (url: url, at: DateTime.now());
+            _lastOpenInWebView = failurePage
+                ? null
+                : (url: url, at: DateTime.now());
             // 웹뷰가 이 화면을 여는 데 생긴 오류는 연결 실패 화면으로 보여야 하므로 가로채기 창을 닫는다.
             _interceptedAt = null;
             _openingInWebView = (url: page, at: DateTime.now());

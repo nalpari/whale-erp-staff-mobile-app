@@ -549,6 +549,36 @@ void main() {
     expect(redactUrls('쿼리 없는 https://a.b/c'), '쿼리 없는 https://a.b/c');
   });
 
+  test('받기 실패 안내 화면은 같은 출처 https 의 /pay/<id>?download= 만', () {
+    final base = Uri.parse('https://staff-dev.whaleerp.co.kr');
+    bool check(String url) => isPayslipFailurePage(Uri.parse(url), base);
+    expect(
+      check('https://staff-dev.whaleerp.co.kr/pay/12?download=failed'),
+      isTrue,
+    );
+    expect(
+      check(
+        'https://staff-dev.whaleerp.co.kr/pay/12?from=notifications&download=reviewing',
+      ),
+      isTrue,
+    );
+    // 안내가 없는 상세 · 로그인 화면 · 다른 출처 · http 는 아니다(로그인 되풀이 막기는 그대로).
+    expect(check('https://staff-dev.whaleerp.co.kr/pay/12'), isFalse);
+    expect(
+      check('https://staff-dev.whaleerp.co.kr/login?download=failed'),
+      isFalse,
+    );
+    expect(
+      check('https://staff-dev.whaleerp.co.kr/pay/12/pdf?download=failed'),
+      isFalse,
+    );
+    expect(check('https://evil.example.com/pay/12?download=failed'), isFalse);
+    expect(
+      check('http://staff-dev.whaleerp.co.kr/pay/12?download=failed'),
+      isFalse,
+    );
+  });
+
   test('급여명세서 PDF 라우트는 웹 주소와 같은 출처의 /pay/<id>/pdf 만', () {
     final base = Uri.parse('https://staff-dev.whaleerp.co.kr');
     expect(
