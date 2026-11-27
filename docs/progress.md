@@ -167,3 +167,4 @@
 - 2026-11-27 · `efabfda` · 두 손가락 확대 막기(창수 지시). `noZoomViewportScript`(viewport 태그에 maximum-scale=1 · user-scalable=no 추가, viewport-fit 유지) + Android `supportZoom: false`. 「네이티브 껍데기」 표에 줄 추가, 실기기 확인 남음
 - 2026-11-27 · `3fdea97` · PR #10 pr-agent 리뷰 반영. 확대 막기 스크립트가 viewport 태그의 `content` 뿐 아니라 `name` 바뀜도 보고 다시 맞춘다(이미 있던 meta 를 viewport 로 바꿔 쓰는 경우)
 - 2026-11-27 · `f340e34` · PR #10 pr-agent 재리뷰 반영. 확대 막기 스크립트가 공백으로 나눈 viewport 지시어(`maximum-scale=2 viewport-fit=cover`)도 하나씩 읽어 확대 관련만 바꾸고 `viewport-fit` 등은 지킨다
+- 2026-11-27 · `23c031d` · PR #10 pr-agent 재리뷰 반영. viewport 태그를 대소문자 없이 찾는다(`name="Viewport"` 를 놓치고 viewport-fit 없는 태그를 새로 붙이지 않게)

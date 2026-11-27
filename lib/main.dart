@@ -289,7 +289,7 @@ const noZoomViewportScript = '''
   if (window.__whaleNoZoom) return;
   window.__whaleNoZoom = true;
   const lock = () => {
-    let metas = document.querySelectorAll('meta[name="viewport"]');
+    let metas = document.querySelectorAll('meta[name="viewport" i]');
     if (metas.length === 0 && document.head) {
       const meta = document.createElement('meta');
       meta.name = 'viewport';
