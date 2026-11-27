@@ -298,8 +298,11 @@ const noZoomViewportScript = '''
       metas = [meta];
     }
     for (const meta of metas) {
+      // WebKit 은 쉼표뿐 아니라 공백으로 나눈 지시어도 읽는다. `=` 둘레 공백을 붙인 뒤 쉼표 · 공백 어디로든 나눠,
+      // 확대 관련 지시어만 바꾸고 나머지(viewport-fit=cover 등)는 지킨다(PR #10 pr-agent 재리뷰).
       const kept = (meta.content || '')
-        .split(',')
+        .replace(/\\s*=\\s*/g, '=')
+        .split(/[,\\s]+/)
         .map((part) => part.trim())
         .filter((part) => part && !/^(maximum-scale|minimum-scale|user-scalable)\\s*=/i.test(part));
       const next = [...kept, 'maximum-scale=1', 'user-scalable=no'].join(', ');
