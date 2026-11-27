@@ -278,6 +278,50 @@ const dialogOrderScript = '''
 })();
 ''';
 
+/// 페이지가 그려질 때 심는 스크립트. 두 손가락 확대 · 축소를 막는다(2026-11-27 창수 — 앱인데 웹처럼 화면 전체가 커졌다).
+/// 웹의 viewport 태그(`width=device-width, initial-scale=1, viewport-fit=cover`)는 그대로 두고 `maximum-scale=1` ·
+/// `user-scalable=no` 만 더한다. iOS 는 플러그인의 `supportZoom: false` 를 쓰면 viewport 태그를 통째로 새로 붙여
+/// `viewport-fit=cover`(웹 PR #91)가 빠지므로 쓰지 않는다. `maximum-scale=1` 은 iOS 가 16px 보다 작은 입력칸을 누를 때
+/// 저절로 확대하는 것도 막는다. 웹이 화면을 옮기며 태그를 바꿔도 다시 맞춘다(MutationObserver). 앱 안에서만 막고, 같은
+/// 화면을 휴대전화 브라우저로 열면 지금처럼 확대된다(접근성). Android 는 웹뷰 설정 `supportZoom: false` 로도 막는다.
+const noZoomViewportScript = '''
+(() => {
+  if (window.__whaleNoZoom) return;
+  window.__whaleNoZoom = true;
+  const lock = () => {
+    let metas = document.querySelectorAll('meta[name="viewport" i]');
+    if (metas.length === 0 && document.head) {
+      const meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, initial-scale=1';
+      document.head.appendChild(meta);
+      metas = [meta];
+    }
+    for (const meta of metas) {
+      // WebKit 은 쉼표뿐 아니라 공백으로 나눈 지시어도 읽는다. `=` 둘레 공백을 붙인 뒤 쉼표 · 공백 어디로든 나눠,
+      // 확대 관련 지시어만 바꾸고 나머지(viewport-fit=cover 등)는 지킨다(PR #10 pr-agent 재리뷰).
+      const kept = (meta.content || '')
+        .replace(/\\s*=\\s*/g, '=')
+        .split(/[,\\s]+/)
+        .map((part) => part.trim())
+        .filter((part) => part && !/^(maximum-scale|minimum-scale|user-scalable)\\s*=/i.test(part));
+      const next = [...kept, 'maximum-scale=1', 'user-scalable=no'].join(', ');
+      if (meta.content !== next) meta.content = next;
+    }
+  };
+  lock();
+  if (document.head) {
+    new MutationObserver(lock).observe(document.head, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      // name 도 본다 — 이미 있던 meta 의 name 만 viewport 로 바꿔 쓰는 경우에도 다시 막는다(PR #10 pr-agent 리뷰).
+      attributeFilter: ['content', 'name'],
+    });
+  }
+})();
+''';
+
 /// 웹이 앱 안에서 열렸는지 알아보는 User-Agent 접미사. 예: `WhaleStaffApp/1.0.0`.
 String appUserAgent(String version) => 'WhaleStaffApp/$version';
 
@@ -763,6 +807,13 @@ class _WebScreenState extends State<WebScreen> {
                               UserScriptInjectionTime.AT_DOCUMENT_START,
                           forMainFrameOnly: true,
                         ),
+                        // <head> 의 viewport 태그를 고쳐야 해서 문서가 다 읽힌 뒤에 심는다
+                        UserScript(
+                          source: noZoomViewportScript,
+                          injectionTime:
+                              UserScriptInjectionTime.AT_DOCUMENT_END,
+                          forMainFrameOnly: true,
+                        ),
                       ]),
                       initialSettings: InAppWebViewSettings(
                         applicationNameForUserAgent: appUserAgent(
@@ -774,6 +825,9 @@ class _WebScreenState extends State<WebScreen> {
                         // NativeBridge.handle 의 출처 · 맨 위 화면 검사는 2차 방어로 남긴다.
                         javaScriptBridgeOriginAllowList: {_base.origin},
                         javaScriptBridgeForMainFrameOnly: true,
+                        // 두 손가락 확대를 막는다(noZoomViewportScript 와 함께). iOS 에서 false 로 두면 플러그인이 viewport
+                        // 태그를 새로 붙여 viewport-fit 이 빠지므로 Android 에서만 끈다.
+                        supportZoom: defaultTargetPlatform != TargetPlatform.android,
                       ),
                       pullToRefreshController: _refresh,
                       // 급여 PDF 「명세서 내보내기」(download 링크, attachment). 웹뷰는 파일을 받지 않으므로 앱이 웹뷰 쿠키를
