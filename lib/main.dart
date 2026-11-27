@@ -312,7 +312,8 @@ const noZoomViewportScript = '''
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['content'],
+      // name 도 본다 — 이미 있던 meta 의 name 만 viewport 로 바꿔 쓰는 경우에도 다시 막는다(PR #10 pr-agent 리뷰).
+      attributeFilter: ['content', 'name'],
     });
   }
 })();
